@@ -1,57 +1,141 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Generate Icons</title>
+  <title>LinuxDo Side Reader - Icon Generator</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-    canvas { margin: 10px; border: 1px solid #ddd; }
-    a { display: inline-block; margin: 10px; padding: 8px 16px; background: #0b0b7e; color: #fff; text-decoration: none; border-radius: 4px; }
-    a:hover { background: #1a1a9e; }
+    body { font-family: Arial, sans-serif; padding: 40px; text-align: center; background: #f5f5f5; }
+    h1 { color: #333; }
+    .drop-zone {
+      margin: 20px auto; padding: 60px 40px; max-width: 500px;
+      border: 3px dashed #ccc; border-radius: 12px; background: #fff;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #0b0b7e; background: #f0f0ff; }
+    .drop-zone p { margin: 8px 0; color: #666; }
+    .drop-zone .hint { font-size: 13px; color: #999; }
+    #preview { margin: 20px 0; }
+    #preview img { max-width: 200px; max-height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .icons-row { display: flex; justify-content: center; gap: 30px; margin: 30px 0; flex-wrap: wrap; }
+    .icon-item { text-align: center; }
+    .icon-item canvas { border: 1px solid #ddd; border-radius: 4px; display: block; margin-bottom: 8px; }
+    .icon-item span { font-size: 13px; color: #666; }
+    a.download-btn {
+      display: inline-block; margin: 6px; padding: 10px 20px;
+      background: #0b0b7e; color: #fff; text-decoration: none;
+      border-radius: 6px; font-size: 14px; transition: background 0.2s;
+    }
+    a.download-btn:hover { background: #1a1a9e; }
+    #actions { margin-top: 20px; }
+    #download-all {
+      display: none; margin: 10px auto; padding: 12px 32px;
+      background: #0b0b7e; color: #fff; border: none; border-radius: 6px;
+      font-size: 16px; cursor: pointer; transition: background 0.2s;
+    }
+    #download-all:hover { background: #1a1a9e; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <h1>LinuxDo Side Reader - Icon Generator</h1>
-  <p>点击下方按钮下载图标文件，然后放入 <code>icons/</code> 目录</p>
-  <div id="icons"></div>
+  <p>上传图片自动生成扩展图标（16 / 48 / 128 px）</p>
+
+  <div class="drop-zone" id="dropZone">
+    <p>📁 拖拽图片到此处，或点击选择文件</p>
+    <p class="hint">支持 PNG / JPG / SVG / WebP</p>
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+  </div>
+
+  <div id="preview" class="hidden"></div>
+
+  <div class="icons-row hidden" id="iconsRow"></div>
+
+  <div id="actions" class="hidden">
+    <button id="downloadAll">📦 一键全部下载</button>
+  </div>
+
   <script>
-    [16, 48, 128].forEach(size => {
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      const padding = size * 0.1;
-      const r = size * 0.18;
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const iconsRow = document.getElementById('iconsRow');
+    const actions = document.getElementById('actions');
+    const downloadAllBtn = document.getElementById('downloadAll');
+    const SIZES = [16, 48, 128];
+    let canvases = [];
 
-      // 圆角矩形背景
-      ctx.fillStyle = '#0b0b7e';
-      ctx.beginPath();
-      ctx.moveTo(padding + r, padding);
-      ctx.lineTo(size - padding - r, padding);
-      ctx.quadraticCurveTo(size - padding, padding, size - padding, padding + r);
-      ctx.lineTo(size - padding, size - padding - r);
-      ctx.quadraticCurveTo(size - padding, size - padding, size - padding - r, size - padding);
-      ctx.lineTo(padding + r, size - padding);
-      ctx.quadraticCurveTo(padding, size - padding, padding, size - padding - r);
-      ctx.lineTo(padding, padding + r);
-      ctx.quadraticCurveTo(padding, padding, padding + r, padding);
-      ctx.closePath();
-      ctx.fill();
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) processFile(file);
+    });
+    fileInput.addEventListener('change', e => {
+      if (e.target.files[0]) processFile(e.target.files[0]);
+    });
 
-      // 侧边栏图标
-      const iconPadding = size * 0.22;
-      ctx.fillStyle = '#ffffff';
-      // 左侧竖线
-      ctx.fillRect(iconPadding, iconPadding, size * 0.08, size - iconPadding * 2);
-      // 右侧矩形（侧边栏）
-      ctx.fillRect(size * 0.38, iconPadding, size * 0.4, size - iconPadding * 2);
+    function processFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => generateIcons(img);
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
 
-      // 下载链接
-      const link = document.createElement('a');
-      link.download = `icon${size}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.textContent = `Download icon${size}.png (${size}x${size})`;
-      document.getElementById('icons').appendChild(link);
-      document.getElementById('icons').appendChild(document.createElement('br'));
+    function generateIcons(img) {
+      // 显示预览
+      preview.innerHTML = '';
+      const previewImg = img.cloneNode();
+      previewImg.style.maxWidth = '200px';
+      previewImg.style.maxHeight = '200px';
+      previewImg.style.borderRadius = '8px';
+      previewImg.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+      preview.appendChild(previewImg);
+      preview.classList.remove('hidden');
+
+      // 生成各尺寸
+      iconsRow.innerHTML = '';
+      canvases = [];
+
+      SIZES.forEach(size => {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        // 裁剪为正方形（取中心）
+        const srcSize = Math.min(img.width, img.height);
+        const sx = (img.width - srcSize) / 2;
+        const sy = (img.height - srcSize) / 2;
+        ctx.drawImage(img, sx, sy, srcSize, srcSize, 0, 0, size, size);
+
+        canvases.push({ canvas, size });
+
+        const item = document.createElement('div');
+        item.className = 'icon-item';
+        item.appendChild(canvas);
+        const label = document.createElement('span');
+        label.textContent = `${size}×${size}`;
+        item.appendChild(label);
+        iconsRow.appendChild(item);
+      });
+
+      iconsRow.classList.remove('hidden');
+      actions.classList.remove('hidden');
+      downloadAllBtn.style.display = 'inline-block';
+    }
+
+    downloadAllBtn.addEventListener('click', () => {
+      canvases.forEach(({ canvas, size }) => {
+        const link = document.createElement('a');
+        link.download = `icon${size}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
     });
   </script>
 </body>

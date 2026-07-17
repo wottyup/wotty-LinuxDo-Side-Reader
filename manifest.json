@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinuxDo Side Reader",
-  "version": "0.0.23",
+  "version": "0.0.25",
   "description": "Open linux.do topics in a right-side slide-out panel without leaving the page",
   "permissions": [],
   "host_permissions": [
@@ -21,6 +21,11 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "LinuxDo Side Reader"
+    "default_title": "LinuxDo Side Reader",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }
