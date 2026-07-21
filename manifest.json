@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinuxDo Side Reader",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "description": "Open linux.do topics in a right-side slide-out panel without leaving the page",
   "permissions": [],
   "host_permissions": [
