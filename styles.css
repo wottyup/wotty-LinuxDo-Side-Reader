@@ -1,7 +1,7 @@
 /* LinuxDo Side Reader - 样式 */
 
-/* === 后台预热宿主：真实尺寸离屏，避免浏览器节流 === */
-#linuxdo-side-reader-prerender-host {
+/* === iframe 离屏预热宿主（真实尺寸，避免浏览器节流） === */
+#linuxdo-side-reader-iframe-host {
   position: fixed;
   left: -10000px;
   top: 0;
@@ -13,8 +13,7 @@
   z-index: -1;
 }
 
-#linuxdo-side-reader-prerender-host .lsr-iframe,
-#linuxdo-side-reader-prerender-host .lsr-iframe-warming {
+#linuxdo-side-reader-iframe-host .lsr-iframe {
   width: 100%;
   height: 100%;
   border: none;
@@ -134,120 +133,6 @@
   background: #fff;
 }
 
-/* === JSON 极速预览层（完整 iframe 就绪前可读） === */
-.lsr-instant {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  overflow: auto;
-  background: #fff;
-  color: #222;
-  overscroll-behavior: contain;
-}
-
-.lsr-instant-inner {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 16px 20px 40px;
-}
-
-.lsr-instant-banner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(11, 11, 126, 0.08);
-  color: #0b0b7e;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.lsr-instant-title {
-  margin: 0 0 18px;
-  font-size: 22px;
-  line-height: 1.35;
-  font-weight: 700;
-  color: #111;
-}
-
-.lsr-post {
-  padding: 14px 0;
-  border-top: 1px solid #ececec;
-}
-
-.lsr-post:first-child {
-  border-top: none;
-}
-
-.lsr-post-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.lsr-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #eee;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.lsr-post-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.lsr-username {
-  font-size: 14px;
-  font-weight: 600;
-  color: #222;
-}
-
-.lsr-post-sub {
-  font-size: 12px;
-  color: #888;
-}
-
-.lsr-post-body {
-  font-size: 15px;
-  line-height: 1.65;
-  color: #333;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.lsr-post-body img,
-.lsr-post-body video {
-  max-width: 100%;
-  height: auto;
-}
-
-.lsr-post-body pre,
-.lsr-post-body code {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.lsr-post-body blockquote {
-  margin: 8px 0;
-  padding: 6px 12px;
-  border-left: 3px solid #d0d0d0;
-  color: #555;
-  background: #fafafa;
-}
-
-.lsr-instant-empty {
-  color: #888;
-  font-size: 14px;
-}
-
 /* === 加载动画 === */
 .lsr-loading {
   position: absolute;
@@ -267,10 +152,6 @@
   opacity: 1;
   visibility: visible;
   transition: opacity 0.18s ease, visibility 0.18s ease;
-}
-
-.lsr-loading-start {
-  display: flex;
 }
 
 .lsr-loading.lsr-loading-hidden {
@@ -378,48 +259,4 @@ html.dark .lsr-spinner,
 body.dark .lsr-spinner {
   border-color: #2a2a4a;
   border-top-color: #0b0b7e;
-}
-
-html.dark .lsr-instant,
-body.dark .lsr-instant {
-  background: #1a1a2e;
-  color: #e0e0e0;
-}
-
-html.dark .lsr-instant-banner,
-body.dark .lsr-instant-banner {
-  background: rgba(120, 120, 255, 0.14);
-  color: #aab0ff;
-}
-
-html.dark .lsr-instant-title,
-body.dark .lsr-instant-title {
-  color: #f0f0f0;
-}
-
-html.dark .lsr-post,
-body.dark .lsr-post {
-  border-top-color: #2a2a4a;
-}
-
-html.dark .lsr-username,
-body.dark .lsr-username {
-  color: #e8e8e8;
-}
-
-html.dark .lsr-post-sub,
-body.dark .lsr-post-sub {
-  color: #888;
-}
-
-html.dark .lsr-post-body,
-body.dark .lsr-post-body {
-  color: #d0d0d0;
-}
-
-html.dark .lsr-post-body blockquote,
-body.dark .lsr-post-body blockquote {
-  border-left-color: #444;
-  background: #151528;
-  color: #bbb;
 }
