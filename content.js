@@ -491,7 +491,8 @@
     }
 
     renderInstantView(data);
-    hideLoading(true);
+    // Don't hide loading — instant has z-index:2, it overlays loading naturally.
+    stopLoadingWatch();
   }
 
   function renderInstantView(data) {
@@ -530,25 +531,19 @@
       </div>
     `;
     instantEl.style.display = '';
-
-    // Double rAF to let the browser paint content before fading in.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (generation !== openGeneration) return;
-        instantEl.classList.add('lsr-instant-visible');
-      });
-    });
   }
 
   function hideInstant() {
     if (!instantEl) return;
     // Fade out the instant layer.
-    instantEl.classList.remove('lsr-instant-visible');
+    instantEl.style.transition = 'opacity 0.22s ease';
+    instantEl.style.opacity = '0';
   }
 
   function clearInstantContent() {
     if (!instantEl) return;
-    instantEl.classList.remove('lsr-instant-visible');
+    instantEl.style.opacity = '';
+    instantEl.style.transition = '';
     instantEl.innerHTML = '';
   }
 
@@ -800,10 +795,11 @@
 
       if (topicMatched && isIframeContentReady(iframeEl)) {
         loadedTopicUrl = url;
-        // Full page ready: hand off from instant preview.
+        // Full page ready: fade out instant preview.
         hideInstant();
-        hideLoading(false);
         iframeEl.style.visibility = '';
+        stopLoadingWatch();
+        hideLoading(false);
         return true;
       }
     } catch (error) {

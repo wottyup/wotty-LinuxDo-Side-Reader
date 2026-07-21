@@ -143,14 +143,6 @@
   background: #fff;
   color: #222;
   overscroll-behavior: contain;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.lsr-instant.lsr-instant-visible {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .lsr-instant-inner {
@@ -275,6 +267,10 @@
   opacity: 1;
   visibility: visible;
   transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+.lsr-loading-start {
+  display: flex;
 }
 
 .lsr-loading.lsr-loading-hidden {
