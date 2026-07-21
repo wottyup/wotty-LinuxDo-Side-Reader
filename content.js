@@ -112,7 +112,7 @@
         </div>
       </div>
       <div class="lsr-body">
-        <div class="lsr-instant" hidden></div>
+        <div class="lsr-instant"></div>
         <div class="lsr-loading">
           <div class="lsr-loading-brand">
             <img class="lsr-loading-logo" alt="LINUX DO" hidden>
@@ -305,7 +305,7 @@
 
     // Same topic already showing: just reopen shell.
     if (iframeEl && sameTopic(loadedTopicUrl, normalizedUrl) && isIframeContentReady(iframeEl)) {
-      hideInstant();
+      clearInstantContent();
       hideLoading(true);
       mountIframeIntoPanel();
       iframeEl.style.visibility = '';
@@ -315,7 +315,7 @@
 
     openPanelShell();
     showLoading();
-    hideInstant();
+    clearInstantContent();
     ensureShell({ url: normalizedUrl });
     mountIframeIntoPanel();
     iframeEl.style.visibility = 'hidden';
@@ -529,13 +529,25 @@
         <div class="lsr-instant-posts">${postsHtml || '<p class="lsr-instant-empty">暂无内容</p>'}</div>
       </div>
     `;
-    instantEl.hidden = false;
-    instantEl.classList.add('lsr-instant-visible');
+    instantEl.style.display = '';
+
+    // Double rAF to let the browser paint content before fading in.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (generation !== openGeneration) return;
+        instantEl.classList.add('lsr-instant-visible');
+      });
+    });
   }
 
   function hideInstant() {
     if (!instantEl) return;
-    instantEl.hidden = true;
+    // Fade out the instant layer.
+    instantEl.classList.remove('lsr-instant-visible');
+  }
+
+  function clearInstantContent() {
+    if (!instantEl) return;
     instantEl.classList.remove('lsr-instant-visible');
     instantEl.innerHTML = '';
   }

@@ -143,10 +143,14 @@
   background: #fff;
   color: #222;
   overscroll-behavior: contain;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
 }
 
-.lsr-instant[hidden] {
-  display: none !important;
+.lsr-instant.lsr-instant-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .lsr-instant-inner {
