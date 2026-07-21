@@ -7,14 +7,17 @@
   'use strict';
 
   const TOPIC_LINK_PATTERN = /^https?:\/\/linux\.do\/t\/[^/]+\/\d+/;
+  const TOPIC_ID_PATTERN = /\/t\/[^/]+\/(\d+)/;
   const CONTENT_READY_SELECTOR = '#topic-title, .topic-post, .topic-area, .timeline-container';
   const PANEL_ID = 'linuxdo-side-reader-panel';
   const OVERLAY_ID = 'linuxdo-side-reader-overlay';
   const IFRAME_STYLE_ID = 'linuxdo-side-reader-iframe-style';
+  const PRERENDER_HOST_ID = 'linuxdo-side-reader-prerender-host';
   const PANEL_WIDTH_STORAGE_KEY = 'linuxdo-side-reader-panel-width';
   const PANEL_MIN_WIDTH = 350;
   const LOADING_HIDE_DELAY_MS = 180;
   const LOADING_WATCH_INTERVAL_MS = 120;
+  const PRERENDER_DEBOUNCE_MS = 180;
   const IFRAME_SANDBOX = 'allow-same-origin allow-scripts allow-popups allow-forms';
   const IFRAME_LAYOUT_STYLE = `
     html, body {
@@ -53,11 +56,17 @@
   `;
 
   const prefetchedUrls = new Set();
+  const prefetchedJsonIds = new Set();
   let panelEl = null;
   let panelBodyEl = null;
   let overlayEl = null;
   let iframeEl = null;
   let loadingEl = null;
+  let prerenderHostEl = null;
+  let prerenderIframeEl = null;
+  let prerenderUrl = '';
+  let prerenderReady = false;
+  let prerenderDebounceTimer = 0;
   let isOpen = false;
   let activeTopicUrl = '';
   let loadedTopicUrl = '';
@@ -67,6 +76,7 @@
   function init() {
     if (document.getElementById(PANEL_ID)) return;
     createPanelDOM();
+    createPrerenderHost();
     bindEvents();
   }
 
@@ -79,14 +89,14 @@
     panelEl.id = PANEL_ID;
     panelEl.innerHTML = `
       <div class="lsr-header">
-        <span class="lsr-title" title="\u62d6\u52a8\u53ef\u8c03\u6574\u5bbd\u5ea6">LinuxDo Side Reader</span>
+        <span class="lsr-title" title="拖动可调整宽度">LinuxDo Side Reader</span>
         <div class="lsr-actions">
-          <a class="lsr-btn lsr-btn-newtab" href="#" title="\u5728\u65b0\u6807\u7b7e\u9875\u4e2d\u6253\u5f00" target="_blank" rel="noreferrer noopener">
+          <a class="lsr-btn lsr-btn-newtab" href="#" title="在新标签页中打开" target="_blank" rel="noreferrer noopener">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M9 1h6v6h-2V4.4L7.7 9.7 6.3 8.3 11.6 3H9V1zM3 3h4v2H3v8h8V9h2v6H1V3h2z"/>
             </svg>
           </a>
-          <button class="lsr-btn lsr-btn-close" title="\u5173\u95ed\u9762\u677f (Esc)">X</button>
+          <button class="lsr-btn lsr-btn-close" title="关闭面板 (Esc)">X</button>
         </div>
       </div>
       <div class="lsr-body">
@@ -95,7 +105,7 @@
             <img class="lsr-loading-logo" alt="LINUX DO" hidden>
             <div class="lsr-spinner"></div>
           </div>
-          <span>\u6b63\u5728\u52a0\u8f7d\u5e16\u5b50...</span>
+          <span>正在加载帖子...</span>
         </div>
       </div>
       <div class="lsr-resize-handle"></div>
@@ -107,6 +117,13 @@
     panelBodyEl = panelEl.querySelector('.lsr-body');
     loadingEl = panelEl.querySelector('.lsr-loading');
     syncLoadingBrand();
+  }
+
+  function createPrerenderHost() {
+    prerenderHostEl = document.createElement('div');
+    prerenderHostEl.id = PRERENDER_HOST_ID;
+    prerenderHostEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(prerenderHostEl);
   }
 
   function bindEvents() {
@@ -131,7 +148,7 @@
   function handleLinkWarmup(event) {
     const link = findTopicLink(event.target);
     if (!link) return;
-    prefetchTopic(link.href);
+    scheduleTopicWarmup(link.href);
   }
 
   function handleLinkClick(event) {
@@ -143,7 +160,9 @@
     if (panelEl && panelEl.contains(link)) return;
 
     const href = normalizeTopicUrl(link.href);
-    prefetchTopic(href);
+    // Cancel pending debounce and warm immediately so click can promote.
+    window.clearTimeout(prerenderDebounceTimer);
+    warmupTopic(href);
 
     event.preventDefault();
     event.stopPropagation();
@@ -162,15 +181,60 @@
     return new URL(url, window.location.href).href;
   }
 
+  function extractTopicId(url) {
+    const match = String(url).match(TOPIC_ID_PATTERN);
+    return match ? match[1] : '';
+  }
+
+  function sameTopic(urlA, urlB) {
+    const idA = extractTopicId(urlA);
+    const idB = extractTopicId(urlB);
+    return Boolean(idA && idB && idA === idB);
+  }
+
   function openTopic(url) {
     const normalizedUrl = normalizeTopicUrl(url);
 
     activeTopicUrl = normalizedUrl;
-    loadedTopicUrl = '';
     panelEl.querySelector('.lsr-btn-newtab').href = normalizedUrl;
+    updatePanelTitle(normalizedUrl);
 
-    const link = document.querySelector(`a[href="${normalizedUrl}"]`);
-    let titleText = '\u5e16\u5b50\u8be6\u60c5';
+    // Same topic already loaded in panel: reopen without reloading.
+    if (iframeEl && sameTopic(loadedTopicUrl, normalizedUrl)) {
+      hideLoading(true);
+      iframeEl.style.visibility = '';
+      openPanelShell();
+      return;
+    }
+
+    // Promote a matching prerendered iframe if available.
+    if (tryPromotePrerender(normalizedUrl)) {
+      openPanelShell();
+      return;
+    }
+
+    // Cold path: create a fresh iframe and load.
+    loadedTopicUrl = '';
+    showLoading();
+    stopLoadingWatch();
+    replaceIframe();
+    startLoadingWatch(normalizedUrl);
+    iframeEl.src = normalizedUrl;
+    openPanelShell();
+  }
+
+  function openPanelShell() {
+    requestAnimationFrame(() => {
+      overlayEl.classList.add('lsr-visible');
+      panelEl.classList.add('lsr-open');
+      document.body.classList.add('lsr-body-lock');
+      isOpen = true;
+    });
+  }
+
+  function updatePanelTitle(url) {
+    const link = document.querySelector(`a[href="${url}"]`);
+    let titleText = '帖子详情';
     if (link) {
       const titleEl = link.closest('.topic-list-item, .latest-topic-list-item')
         ?.querySelector('.main-link a, .link-bottom-line a, a.title');
@@ -184,19 +248,6 @@
 
     panelEl.querySelector('.lsr-title').textContent = titleText || 'LinuxDo Side Reader';
     panelEl.querySelector('.lsr-title').title = titleText || 'LinuxDo Side Reader';
-
-    showLoading();
-    stopLoadingWatch();
-    replaceIframe();
-    startLoadingWatch(normalizedUrl);
-    iframeEl.src = normalizedUrl;
-
-    requestAnimationFrame(() => {
-      overlayEl.classList.add('lsr-visible');
-      panelEl.classList.add('lsr-open');
-      document.body.classList.add('lsr-body-lock');
-      isOpen = true;
-    });
   }
 
   function closePanel() {
@@ -213,10 +264,178 @@
     }
 
     activeTopicUrl = '';
-    loadedTopicUrl = '';
-    removeIframe();
+    // Keep iframe for same-topic instant reopen; do not flash-clear content.
     panelEl.querySelector('.lsr-title').textContent = 'LinuxDo Side Reader';
     panelEl.querySelector('.lsr-title').title = 'LinuxDo Side Reader';
+  }
+
+  function scheduleTopicWarmup(url) {
+    const normalizedUrl = normalizeTopicUrl(url);
+    if (!TOPIC_LINK_PATTERN.test(normalizedUrl)) return;
+
+    // Document + JSON prefetch can start immediately (cheap).
+    prefetchTopicDocument(normalizedUrl);
+    prefetchTopicJson(normalizedUrl);
+
+    // Skip heavy prerender if already open/loaded/prerendering this topic.
+    if (isOpen && sameTopic(activeTopicUrl, normalizedUrl)) return;
+    if (iframeEl && sameTopic(loadedTopicUrl, normalizedUrl)) return;
+    if (prerenderIframeEl && sameTopic(prerenderUrl, normalizedUrl)) return;
+
+    window.clearTimeout(prerenderDebounceTimer);
+    prerenderDebounceTimer = window.setTimeout(() => {
+      warmupTopic(normalizedUrl);
+    }, PRERENDER_DEBOUNCE_MS);
+  }
+
+  function warmupTopic(url) {
+    const normalizedUrl = normalizeTopicUrl(url);
+    if (!TOPIC_LINK_PATTERN.test(normalizedUrl)) return;
+
+    prefetchTopicDocument(normalizedUrl);
+    prefetchTopicJson(normalizedUrl);
+
+    if (isOpen && sameTopic(activeTopicUrl, normalizedUrl)) return;
+    if (iframeEl && sameTopic(loadedTopicUrl, normalizedUrl)) return;
+    if (prerenderIframeEl && sameTopic(prerenderUrl, normalizedUrl)) return;
+
+    startPrerender(normalizedUrl);
+  }
+
+  function prefetchTopicDocument(url) {
+    if (!TOPIC_LINK_PATTERN.test(url)) return;
+    if (prefetchedUrls.has(url)) return;
+    if (!document.head) return;
+
+    try {
+      const prefetchEl = document.createElement('link');
+      prefetchEl.rel = 'prefetch';
+      prefetchEl.as = 'document';
+      prefetchEl.href = url;
+      prefetchEl.crossOrigin = 'use-credentials';
+      document.head.appendChild(prefetchEl);
+      prefetchedUrls.add(url);
+    } catch (error) {
+      console.warn('[LinuxDo Side Reader] Failed to prefetch topic document:', error);
+    }
+  }
+
+  function prefetchTopicJson(url) {
+    const topicId = extractTopicId(url);
+    if (!topicId || prefetchedJsonIds.has(topicId)) return;
+
+    prefetchedJsonIds.add(topicId);
+
+    try {
+      const jsonUrl = new URL(`/t/${topicId}.json`, window.location.origin).href;
+      fetch(jsonUrl, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+        },
+        // Prefer cache so the iframe's later request can hit HTTP cache.
+        cache: 'force-cache',
+      }).catch(() => {
+        // Warmup is best-effort; ignore network errors.
+      });
+    } catch (error) {
+      console.warn('[LinuxDo Side Reader] Failed to prefetch topic JSON:', error);
+    }
+  }
+
+  function startPrerender(url) {
+    if (!prerenderHostEl) return;
+
+    clearPrerender();
+
+    const nextIframe = document.createElement('iframe');
+    nextIframe.className = 'lsr-prerender-iframe';
+    nextIframe.setAttribute('sandbox', IFRAME_SANDBOX);
+    nextIframe.setAttribute('tabindex', '-1');
+    nextIframe.setAttribute('aria-hidden', 'true');
+
+    prerenderIframeEl = nextIframe;
+    prerenderUrl = url;
+    prerenderReady = false;
+
+    nextIframe.addEventListener('load', () => {
+      if (prerenderIframeEl !== nextIframe) return;
+      injectLayoutIntoDoc(nextIframe.contentDocument);
+      if (isIframeContentReady(nextIframe)) {
+        prerenderReady = true;
+      }
+    });
+
+    prerenderHostEl.appendChild(nextIframe);
+    nextIframe.src = url;
+
+    // Early-ready polling while still off-screen.
+    const watchId = window.setInterval(() => {
+      if (prerenderIframeEl !== nextIframe) {
+        window.clearInterval(watchId);
+        return;
+      }
+      injectLayoutIntoDoc(nextIframe.contentDocument);
+      if (isIframeContentReady(nextIframe)) {
+        prerenderReady = true;
+        window.clearInterval(watchId);
+      }
+    }, LOADING_WATCH_INTERVAL_MS);
+  }
+
+  function clearPrerender() {
+    if (prerenderIframeEl) {
+      prerenderIframeEl.remove();
+      prerenderIframeEl = null;
+    }
+    prerenderUrl = '';
+    prerenderReady = false;
+  }
+
+  function tryPromotePrerender(url) {
+    if (!prerenderIframeEl || !sameTopic(prerenderUrl, url)) {
+      return false;
+    }
+
+    const ready = prerenderReady || isIframeContentReady(prerenderIframeEl);
+    const nextIframe = prerenderIframeEl;
+
+    // Detach from prerender state before reparenting.
+    prerenderIframeEl = null;
+    prerenderUrl = '';
+    prerenderReady = false;
+
+    removeIframe();
+
+    nextIframe.className = 'lsr-iframe';
+    nextIframe.removeAttribute('tabindex');
+    nextIframe.removeAttribute('aria-hidden');
+    nextIframe.style.visibility = ready ? '' : 'hidden';
+
+    nextIframe.addEventListener('load', () => {
+      if (iframeEl !== nextIframe) return;
+      loadedTopicUrl = activeTopicUrl || nextIframe.src;
+      syncIframeLayout();
+      stopLoadingWatch();
+      hideLoading(true);
+      nextIframe.style.visibility = '';
+    });
+
+    panelBodyEl.insertBefore(nextIframe, loadingEl);
+    iframeEl = nextIframe;
+    injectLayoutIntoDoc(nextIframe.contentDocument);
+
+    if (ready) {
+      loadedTopicUrl = url;
+      hideLoading(true);
+      nextIframe.style.visibility = '';
+    } else {
+      showLoading();
+      startLoadingWatch(url);
+    }
+
+    return true;
   }
 
   function replaceIframe() {
@@ -330,17 +549,26 @@
     loadingWatchTimer = 0;
   }
 
-  function tryRevealContent(url) {
+  function isIframeContentReady(iframe) {
     try {
-      const iframeDoc = iframeEl?.contentDocument;
-      if (!iframeDoc || activeTopicUrl !== url) return false;
-
-      syncIframeLayout();
+      const iframeDoc = iframe?.contentDocument;
+      if (!iframeDoc) return false;
 
       const hasRenderableContent = Boolean(iframeDoc.querySelector(CONTENT_READY_SELECTOR));
       const bodyReady = Boolean(iframeDoc.body && iframeDoc.body.childElementCount > 0);
+      return hasRenderableContent || (bodyReady && iframeDoc.readyState === 'complete');
+    } catch (error) {
+      return false;
+    }
+  }
 
-      if (hasRenderableContent || (bodyReady && iframeDoc.readyState === 'complete')) {
+  function tryRevealContent(url) {
+    try {
+      if (!iframeEl || activeTopicUrl !== url) return false;
+
+      syncIframeLayout();
+
+      if (isIframeContentReady(iframeEl)) {
         hideLoading(false);
         iframeEl.style.visibility = '';
         loadedTopicUrl = url;
@@ -353,24 +581,27 @@
     return false;
   }
 
+  function injectLayoutIntoDoc(iframeDoc) {
+    if (!iframeDoc) return;
+
+    const mountTarget = iframeDoc.head || iframeDoc.documentElement;
+    if (!mountTarget) return;
+
+    let styleEl = iframeDoc.getElementById(IFRAME_STYLE_ID);
+    if (!styleEl) {
+      styleEl = iframeDoc.createElement('style');
+      styleEl.id = IFRAME_STYLE_ID;
+      mountTarget.appendChild(styleEl);
+    }
+
+    if (styleEl.textContent !== IFRAME_LAYOUT_STYLE) {
+      styleEl.textContent = IFRAME_LAYOUT_STYLE;
+    }
+  }
+
   function syncIframeLayout() {
     try {
-      const iframeDoc = iframeEl?.contentDocument;
-      if (!iframeDoc) return;
-
-      const mountTarget = iframeDoc.head || iframeDoc.documentElement;
-      if (!mountTarget) return;
-
-      let styleEl = iframeDoc.getElementById(IFRAME_STYLE_ID);
-      if (!styleEl) {
-        styleEl = iframeDoc.createElement('style');
-        styleEl.id = IFRAME_STYLE_ID;
-        mountTarget.appendChild(styleEl);
-      }
-
-      if (styleEl.textContent !== IFRAME_LAYOUT_STYLE) {
-        styleEl.textContent = IFRAME_LAYOUT_STYLE;
-      }
+      injectLayoutIntoDoc(iframeEl?.contentDocument);
     } catch (error) {
       console.warn('[LinuxDo Side Reader] Failed to sync iframe layout:', error);
     }
@@ -446,24 +677,6 @@
 
   function clampPanelWidth(width) {
     return Math.min(Math.max(width, PANEL_MIN_WIDTH), window.innerWidth);
-  }
-
-  function prefetchTopic(url) {
-    if (!TOPIC_LINK_PATTERN.test(url)) return;
-    if (prefetchedUrls.has(url)) return;
-    if (!document.head) return;
-
-    try {
-      const prefetchEl = document.createElement('link');
-      prefetchEl.rel = 'prefetch';
-      prefetchEl.as = 'document';
-      prefetchEl.href = url;
-      prefetchEl.crossOrigin = 'use-credentials';
-      document.head.appendChild(prefetchEl);
-      prefetchedUrls.add(url);
-    } catch (error) {
-      console.warn('[LinuxDo Side Reader] Failed to prefetch topic:', error);
-    }
   }
 
   if (document.readyState === 'loading') {

@@ -1,5 +1,25 @@
 /* LinuxDo Side Reader - 样式 */
 
+/* === 后台预渲染宿主（不可见，用于悬停预加载） === */
+#linuxdo-side-reader-prerender-host {
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+#linuxdo-side-reader-prerender-host .lsr-prerender-iframe {
+  width: 920px;
+  height: 100vh;
+  border: none;
+  position: absolute;
+  left: -99999px;
+  top: 0;
+}
+
 /* === 遮罩层 === */
 #linuxdo-side-reader-overlay {
   position: fixed;
