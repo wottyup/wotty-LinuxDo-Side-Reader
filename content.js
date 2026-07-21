@@ -2,269 +2,362 @@
  * LinuxDo Side Reader - Content Script
  * Intercepts linux.do topic links and opens them in a slide-out panel.
  *
- * Speed strategy (dual iframe):
- * 1) Panel iframe shows the current topic.
- * 2) Background warm iframe preloads the next likely topic.
- * 3) On click, swap the prewarmed iframe in — instant.
- * 4) On page load, prewarm to the first visible topic in the list.
+ * Speed strategy (pure iframe, no JSON preview layer):
+ * 1) Prewarm a persistent Discourse SPA iframe at real size, off-screen.
+ * 2) pointerover immediately navigates the warm iframe to the target topic.
+ * 3) Close leaves the iframe alive off-screen for instant re-open.
  */
 
 (function () {
   'use strict';
 
-  const TOPIC_LINK_RE = /^https?:\/\/linux\.do\/t\/[^/]+\/\d+/;
-  const TOPIC_ID_RE = /\/t\/[^/]+\/(\d+)/;
-  const CONTENT_READY_SEL = '#topic-title, .topic-post, .topic-area, .timeline-container';
+  const TOPIC_LINK_PATTERN = /^https?:\/\/linux\.do\/t\/[^/]+\/\d+/;
+  const TOPIC_ID_PATTERN = /\/t\/[^/]+\/(\d+)/;
+  const CONTENT_READY_SELECTOR = '#topic-title, .topic-post, .topic-area, .timeline-container';
   const PANEL_ID = 'linuxdo-side-reader-panel';
   const OVERLAY_ID = 'linuxdo-side-reader-overlay';
-  const STYLE_ID = 'linuxdo-side-reader-iframe-style';
+  const IFRAME_STYLE_ID = 'linuxdo-side-reader-iframe-style';
   const HOST_ID = 'linuxdo-side-reader-iframe-host';
-  const PANEL_WIDTH_KEY = 'linuxdo-side-reader-panel-width';
-  const PANEL_MIN_W = 350;
-  const WATCH_IV = 80;
+  const PANEL_WIDTH_STORAGE_KEY = 'linuxdo-side-reader-panel-width';
+  const PANEL_MIN_WIDTH = 350;
+  const LOADING_WATCH_INTERVAL_MS = 80;
   const HOST_URL = 'https://linux.do/latest';
-  const SANDBOX = 'allow-same-origin allow-scripts allow-popups allow-forms';
-  const LAYOUT_CSS = '\
-    html,body{overscroll-behavior:contain!important}\
-    :root{--d-sidebar-width:0px!important;--d-sidebar-width-desktop:0px!important}\
-    .sidebar-wrapper,.sidebar-container,.d-sidebar{display:none!important}\
-    .timeline-container{display:flex!important;visibility:visible!important;opacity:1!important}\
-    .topic-navigation{display:flex!important;visibility:visible!important;opacity:1!important}\
-    .topic-timeline,.topic-map{display:block!important;visibility:visible!important;opacity:1!important}';
+  const IFRAME_SANDBOX = 'allow-same-origin allow-scripts allow-popups allow-forms';
+  const IFRAME_LAYOUT_STYLE = `
+    html, body {
+      overscroll-behavior: contain !important;
+    }
 
-  // ---- state ----
-  let panelEl, panelBodyEl, overlayEl, loadingEl, hostEl;
-  let panelIframe = null;   // iframe currently in the panel
-  let warmIframe = null;    // background iframe preloading next topic
+    :root {
+      --d-sidebar-width: 0px !important;
+      --d-sidebar-width-desktop: 0px !important;
+    }
+
+    .sidebar-wrapper,
+    .sidebar-container,
+    .d-sidebar {
+      display: none !important;
+    }
+
+    .timeline-container {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    .topic-navigation {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    .topic-timeline,
+    .topic-map {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+  `;
+
+  let panelEl = null;
+  let panelBodyEl = null;
+  let overlayEl = null;
+  let iframeEl = null;
+  let loadingEl = null;
+  let hostEl = null;
   let isOpen = false;
-  let activeUrl = '';
-  let loadedUrl = '';       // topic the panel iframe has actually finished loading
-  let warmUrl = '';         // topic the warm iframe is targeting
-  let watchTimer = 0;
-  let gen = 0;
+  let loadedTopicUrl = '';
+  let activeTopicUrl = '';
+  let loadingWatchTimer = 0;
+  let navCancelId = 0;
 
   function init() {
     if (document.getElementById(PANEL_ID)) return;
-    buildDOM();
-    bind();
-    setTimeout(prewarmFirstTopic, 50);
+    createPanelDOM();
+    createHost();
+    bindEvents();
+    prewarmShell();
   }
 
-  // ---- DOM ----
-
-  function buildDOM() {
-    overlayEl = el('div', { id: OVERLAY_ID });
+  function createPanelDOM() {
+    overlayEl = document.createElement('div');
+    overlayEl.id = OVERLAY_ID;
     document.body.appendChild(overlayEl);
 
-    panelEl = el('div', { id: PANEL_ID });
-    panelEl.innerHTML = '\
-      <div class="lsr-header">\
-        <span class="lsr-title" title="拖动可调整宽度">LinuxDo Side Reader</span>\
-        <div class="lsr-actions">\
-          <a class="lsr-btn lsr-btn-newtab" href="#" title="在新标签页中打开" target="_blank" rel="noreferrer noopener">\
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M9 1h6v6h-2V4.4L7.7 9.7 6.3 8.3 11.6 3H9V1zM3 3h4v2H3v8h8V9h2v6H1V3h2z"/></svg>\
-          </a>\
-          <button class="lsr-btn lsr-btn-close" title="关闭面板 (Esc)">X</button>\
-        </div>\
-      </div>\
-      <div class="lsr-body">\
-        <div class="lsr-loading">\
-          <div class="lsr-loading-brand">\
-            <img class="lsr-loading-logo" alt="LINUX DO" hidden>\
-            <div class="lsr-spinner"></div>\
-          </div>\
-          <span>正在加载帖子…</span>\
-        </div>\
-      </div>\
-      <div class="lsr-resize-handle"></div>';
+    panelEl = document.createElement('div');
+    panelEl.id = PANEL_ID;
+    panelEl.innerHTML = `
+      <div class="lsr-header">
+        <span class="lsr-title" title="拖动可调整宽度">LinuxDo Side Reader</span>
+        <div class="lsr-actions">
+          <a class="lsr-btn lsr-btn-newtab" href="#" title="在新标签页中打开" target="_blank" rel="noreferrer noopener">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M9 1h6v6h-2V4.4L7.7 9.7 6.3 8.3 11.6 3H9V1zM3 3h4v2H3v8h8V9h2v6H1V3h2z"/>
+            </svg>
+          </a>
+          <button class="lsr-btn lsr-btn-close" title="关闭面板 (Esc)">X</button>
+        </div>
+      </div>
+      <div class="lsr-body">
+        <div class="lsr-loading">
+          <div class="lsr-loading-brand">
+            <img class="lsr-loading-logo" alt="LINUX DO" hidden>
+            <div class="lsr-spinner"></div>
+          </div>
+          <span>正在加载帖子...</span>
+        </div>
+      </div>
+      <div class="lsr-resize-handle"></div>
+    `;
     document.body.appendChild(panelEl);
 
-    applySavedWidth();
+    applySavedPanelWidth();
     panelBodyEl = panelEl.querySelector('.lsr-body');
     loadingEl = panelEl.querySelector('.lsr-loading');
-    syncBrand();
+    syncLoadingBrand();
+  }
 
-    hostEl = el('div', { id: HOST_ID, 'aria-hidden': 'true' });
+  function createHost() {
+    hostEl = document.createElement('div');
+    hostEl.id = HOST_ID;
+    hostEl.setAttribute('aria-hidden', 'true');
     document.body.appendChild(hostEl);
   }
 
-  function el(tag, attrs) {
-    const e = document.createElement(tag);
-    if (attrs) Object.assign(e, attrs);
-    for (const k in attrs || {}) {
-      if (k.startsWith('aria-') || k === 'id') e.setAttribute(k, attrs[k]);
-    }
-    return e;
-  }
+  function bindEvents() {
+    document.addEventListener('click', handleLinkClick, true);
+    document.addEventListener('pointerover', handlePointerOver, true);
+    document.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true });
 
-  // ---- events ----
-
-  function bind() {
-    document.addEventListener('click', onClick, true);
-    document.addEventListener('pointerover', onHover, true);
-    document.addEventListener('touchstart', onTouch, { capture: true, passive: true });
     panelEl.querySelector('.lsr-btn-close').addEventListener('click', closePanel);
     overlayEl.addEventListener('click', closePanel);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) closePanel(); });
-    window.addEventListener('resize', syncWidth);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isOpen) closePanel();
+    });
+
+    window.addEventListener('resize', syncPanelWidthToViewport);
     initResize();
   }
 
-  function findLink(t) { const a = t.closest?.('a[href]'); return a && TOPIC_LINK_RE.test(a.href) ? a : null; }
-  function norm(u) { return new URL(u, location.href).href; }
-  function tid(u) { const m = String(u).match(TOPIC_ID_RE); return m ? m[1] : ''; }
-  function same(a, b) { const ia = tid(a), ib = tid(b); return Boolean(ia && ib && ia === ib); }
+  function findTopicLink(target) {
+    if (!(target instanceof Element)) return null;
+    const link = target.closest('a[href]');
+    if (!link) return null;
+    if (!TOPIC_LINK_PATTERN.test(link.href)) return null;
+    return link;
+  }
 
-  function onHover(e) { const l = findLink(e.target); if (l) warmTo(norm(l.href)); }
-  function onTouch(e) { const l = findLink(e.target); if (l) warmTo(norm(l.href)); }
+  function normalizeUrl(url) {
+    return new URL(url, window.location.href).href;
+  }
 
-  function onClick(e) {
+  function topicIdOf(url) {
+    const m = String(url).match(TOPIC_ID_PATTERN);
+    return m ? m[1] : '';
+  }
+
+  function sameTopic(a, b) {
+    const idA = topicIdOf(a), idB = topicIdOf(b);
+    return Boolean(idA && idB && idA === idB);
+  }
+
+  // ---- pointerover / touchstart warmup ----
+
+  function handlePointerOver(e) {
+    const link = findTopicLink(e.target);
+    if (!link) return;
+    warmupToTopic(link.href);
+  }
+
+  function handleTouchStart(e) {
+    const link = findTopicLink(e.target);
+    if (!link) return;
+    warmupToTopic(link.href);
+  }
+
+  // ---- click ----
+
+  function handleLinkClick(e) {
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     if (e.button !== 0) return;
-    const link = findLink(e.target);
-    if (!link || (panelEl && panelEl.contains(link))) return;
-    const url = norm(link.href);
-    warmTo(url);
-    e.preventDefault(); e.stopPropagation();
-    open(url);
+
+    const link = findTopicLink(e.target);
+    if (!link) return;
+    if (panelEl && panelEl.contains(link)) return;
+
+    const url = normalizeUrl(link.href);
+    warmupToTopic(url);
+
+    e.preventDefault();
+    e.stopPropagation();
+    openTopic(url);
   }
 
-  // ---- iframe factory ----
+  // ---- warmup: navigate the persistent iframe to the target topic ----
 
-  function makeIframe(url) {
-    const f = document.createElement('iframe');
-    f.className = 'lsr-iframe';
-    f.setAttribute('sandbox', SANDBOX);
-    f.style.visibility = 'hidden';
-    f.addEventListener('load', () => injectLayout(f.contentDocument));
-    hostEl.appendChild(f);
-    f.src = url || HOST_URL;
-    return f;
+  function warmupToTopic(url) {
+    const normalized = normalizeUrl(url);
+    if (!TOPIC_LINK_PATTERN.test(normalized)) return;
+
+    // Skip if the warm iframe already shows this topic.
+    if (loadedTopicUrl && sameTopic(loadedTopicUrl, normalized)) return;
+
+    navCancelId++;
+
+    ensureIframe({ url: normalized });
+    navigateIframeTo(normalized);
   }
 
-  function swapIframes(fromPool, toPool) {
-    // Move `fromPool` into panel if not already there.
-    if (fromPool && fromPool.parentElement !== panelBodyEl) {
-      panelBodyEl.insertBefore(fromPool, loadingEl);
-    }
-    // Park `toPool` off-screen.
-    if (toPool && toPool.parentElement !== hostEl) {
-      toPool.style.visibility = 'hidden';
-      hostEl.appendChild(toPool);
-    }
+  // ---- iframe lifecycle ----
+
+  function ensureIframe(options = {}) {
+    if (iframeEl) return iframeEl;
+
+    const nextIframe = document.createElement('iframe');
+    nextIframe.className = 'lsr-iframe';
+    nextIframe.setAttribute('sandbox', IFRAME_SANDBOX);
+    nextIframe.style.visibility = 'hidden';
+
+    nextIframe.addEventListener('load', onIframeLoad);
+    nextIframe.addEventListener('error', () => {
+      // If load fails, don't keep stale state.
+      loadedTopicUrl = '';
+    });
+
+    // Place off-screen initially.
+    hostEl.appendChild(nextIframe);
+    iframeEl = nextIframe;
+
+    const initialUrl = options.url || HOST_URL;
+    nextIframe.src = initialUrl;
+    return nextIframe;
   }
 
-  // ---- prewarm ----
+  function onIframeLoad() {
+    if (!iframeEl) return;
+    injectLayoutIntoDoc(iframeEl.contentDocument);
 
-  function prewarmFirstTopic() {
-    const firstLink = document.querySelector('a[href]');
-    // Try the first topic link in the list.
-    const topicLink = document.querySelector('.topic-list-item a.title[href], .latest-topic-list-item a[href], a.topic-link[href]');
-    const url = topicLink ? norm(topicLink.href) : null;
-    warmIframe = makeIframe(url);
-    if (url) { warmUrl = url; loadedWarm(url); }
-  }
-
-  function warmTo(url) {
-    const u = norm(url);
-    if (!TOPIC_LINK_RE.test(u)) return;
-
-    // Don't warm the already-active topic or the already-warming topic.
-    if (same(u, activeUrl) || same(u, loadedUrl)) return;
-    if (warmIframe && same(u, warmUrl)) return;
-
-    // If panel iframe is the only one and not active, use it to warm.
-    if (!warmIframe && panelIframe && !same(loadedUrl, u)) {
-      // Steal panel iframe for warming if panel is closed.
-      if (!isOpen) {
-        warmIframe = panelIframe;
-        panelIframe = null;
-        warmUrl = '';
-        loadedUrl = '';
-        navigateTo(warmIframe, u);
-        warmUrl = u;
-        return;
-      }
+    if (isOpen && activeTopicUrl && isIframeReady(iframeEl)) {
+      loadedTopicUrl = safeIframeHref(iframeEl) || activeTopicUrl;
+      stopLoadingWatch();
+      hideLoading();
+      iframeEl.style.visibility = '';
     }
 
-    if (!warmIframe) {
-      warmIframe = makeIframe(u);
-      warmUrl = u;
-      loadedWarm(u);
+    // Poll for early reveal if the SPA navigates after load.
+    if (isOpen && activeTopicUrl) {
+      startLoadingWatch(activeTopicUrl);
+    }
+  }
+
+  function mountIframeIntoPanel() {
+    if (!iframeEl || !panelBodyEl) return;
+    if (iframeEl.parentElement === panelBodyEl) return;
+    panelBodyEl.insertBefore(iframeEl, loadingEl || null);
+  }
+
+  function parkIframeOffscreen() {
+    if (!iframeEl || !hostEl) return;
+    if (iframeEl.parentElement === hostEl) return;
+    iframeEl.style.visibility = 'hidden';
+    hostEl.appendChild(iframeEl);
+  }
+
+  // ---- open ----
+
+  function prewarmShell() {
+    // Prewarm immediately; don't idle-wait.
+    window.setTimeout(() => {
+      ensureIframe();
+    }, 50);
+  }
+
+  function openTopic(url) {
+    const normalized = normalizeUrl(url);
+
+    activeTopicUrl = normalized;
+    panelEl.querySelector('.lsr-btn-newtab').href = normalized;
+    updateTitle(normalized);
+
+    // Same topic already loaded in panel iframe.
+    if (isIframeReady(iframeEl) && sameTopic(loadedTopicUrl, normalized)) {
+      mountIframeIntoPanel();
+      iframeEl.style.visibility = '';
+      hideLoading();
+      openShell();
       return;
     }
 
-    navigateTo(warmIframe, u);
-    warmUrl = u;
-    loadedWarm(u);
-  }
-
-  function loadedWarm(url) {
-    // Mark that the warm iframe is now loading this topic.
-    // The actual loadedUrl gets updated in tryReveal or on load.
-  }
-
-  // ---- open / close ----
-
-  function open(url) {
-    const u = norm(url);
+    // Show panel, show loading, navigate / reveal.
     openShell();
     showLoading();
-    gen++;
+    mountIframeIntoPanel();
+    iframeEl.style.visibility = 'hidden';
 
-    const g = gen;
-    activeUrl = u;
-    panelEl.querySelector('.lsr-btn-newtab').href = u;
-    updateTitle(u);
+    // If the warm iframe is on a different topic, navigate it now.
+    if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
+      navigateIframeTo(normalized);
+    }
 
-    // Case 1: panel iframe already has this topic loaded.
-    if (panelIframe && same(loadedUrl, u) && isReady(panelIframe)) {
-      panelIframe.style.visibility = '';
-      hideLoading();
+    // Start polling for content readiness.
+    startLoadingWatch(normalized);
+  }
+
+  function navigateIframeTo(url) {
+    if (!iframeEl) return;
+    const normalized = normalizeUrl(url);
+
+    // Prefer client-side routing for Discourse SPA.
+    if (tryDiscourseRoute(iframeEl, normalized)) {
+      loadedTopicUrl = '';
       return;
     }
 
-    // Case 2: warm iframe has this topic → promote it.
-    if (warmIframe && same(warmUrl, u)) {
-      // Swap: old panel becomes warm, warm becomes panel.
-      const oldPanel = panelIframe;
-      panelIframe = warmIframe;
-      warmIframe = oldPanel;
-      if (oldPanel) warmUrl = '';
-
-      panelIframe.style.visibility = 'hidden';
-      swapIframes(panelIframe, warmIframe);
-
-      const alreadyReady = isReady(panelIframe);
-      if (alreadyReady) {
-        loadedUrl = u;
-        hideLoading();
-        panelIframe.style.visibility = '';
-      } else {
-        watch(u, g);
+    try {
+      const current = iframeEl.contentWindow?.location?.href || '';
+      if (current === 'about:blank' || !current) {
+        iframeEl.src = normalized;
+      } else if (!sameTopic(current, normalized)) {
+        iframeEl.contentWindow.location.assign(normalized);
       }
-      return;
+    } catch (error) {
+      iframeEl.src = normalized;
     }
+    loadedTopicUrl = '';
+  }
 
-    // Case 3: cold — navigate the panel iframe.
-    if (!panelIframe) {
-      // Promote warm iframe if it exists, even if wrong topic.
-      if (warmIframe) {
-        panelIframe = warmIframe;
-        warmIframe = null;
-        warmUrl = '';
-      } else {
-        panelIframe = makeIframe(u);
+  function tryDiscourseRoute(iframe, url) {
+    try {
+      const win = iframe.contentWindow;
+      if (!win) return false;
+      const path = new URL(url, window.location.origin).pathname + window.location.search + window.location.hash;
+
+      if (win.DiscourseURL && typeof win.DiscourseURL.routeTo === 'function') {
+        win.DiscourseURL.routeTo(path);
+        return true;
       }
-    }
 
-    panelIframe.style.visibility = 'hidden';
-    swapIframes(panelIframe, warmIframe);
+      if (typeof win.require === 'function') {
+        try {
+          const mod = win.require('discourse/lib/url');
+          const URL = mod && (mod.default || mod);
+          if (URL && typeof URL.routeTo === 'function') {
+            URL.routeTo(path);
+            return true;
+          }
+        } catch (_) {}
+      }
 
-    if (!same(loadedUrl, u)) {
-      navigateTo(panelIframe, u);
-    }
-    watch(u, g);
+      if (win.Discourse && win.Discourse.__container__) {
+        const router = win.Discourse.__container__.lookup('router:main');
+        if (router && typeof router.handleURL === 'function') {
+          router.handleURL(path);
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
   }
 
   function openShell() {
@@ -281,100 +374,43 @@
     overlayEl.classList.remove('lsr-visible');
     document.body.classList.remove('lsr-body-lock');
     isOpen = false;
-    stopWatch();
-    hideLoading();
-    activeUrl = '';
+
+    stopLoadingWatch();
+    if (loadingEl) {
+      loadingEl.style.display = 'none';
+      loadingEl.classList.remove('lsr-loading-hidden');
+    }
+
+    activeTopicUrl = '';
     panelEl.querySelector('.lsr-title').textContent = 'LinuxDo Side Reader';
     panelEl.querySelector('.lsr-title').title = 'LinuxDo Side Reader';
-    // Park panel iframe off-screen; keep warm iframe alive.
-    if (panelIframe) {
-      panelIframe.style.visibility = 'hidden';
-      hostEl.appendChild(panelIframe);
-    }
+
+    // Keep iframe alive off-screen.
+    parkIframeOffscreen();
   }
 
   function updateTitle(url) {
-    let t = '帖子详情';
+    let text = '帖子详情';
     const link = document.querySelector(`a[href="${url}"]`);
     if (link) {
       const titleEl = link.closest('.topic-list-item, .latest-topic-list-item')
         ?.querySelector('.main-link a, .link-bottom-line a, a.title');
-      t = titleEl ? titleEl.textContent.trim() : link.textContent.trim().slice(0, 50);
+      if (titleEl) text = titleEl.textContent.trim();
+      else text = link.textContent.trim().slice(0, 50);
     }
-    panelEl.querySelector('.lsr-title').textContent = t || 'LinuxDo Side Reader';
-    panelEl.querySelector('.lsr-title').title = t || 'LinuxDo Side Reader';
+    panelEl.querySelector('.lsr-title').textContent = text || 'LinuxDo Side Reader';
+    panelEl.querySelector('.lsr-title').title = text || 'LinuxDo Side Reader';
   }
 
-  // ---- navigation ----
-
-  function navigateTo(iframe, url) {
-    if (!iframe) return;
-    const u = norm(url);
-    if (tryRoute(iframe, u)) return;
-
-    try {
-      const cur = iframe.contentWindow?.location?.href || '';
-      if (cur === 'about:blank' || !cur) iframe.src = u;
-      else if (!same(cur, u)) iframe.contentWindow.location.assign(u);
-    } catch (_) { iframe.src = u; }
-    loadedUrl = '';
-  }
-
-  function tryRoute(iframe, url) {
-    try {
-      const w = iframe.contentWindow;
-      if (!w) return false;
-      const path = new URL(url, location.origin).pathname + location.search + location.hash;
-      if (w.DiscourseURL?.routeTo) { w.DiscourseURL.routeTo(path); return true; }
-      if (typeof w.require === 'function') {
-        try { const m = w.require('discourse/lib/url'); const u = m?.default || m; if (u?.routeTo) { u.routeTo(path); return true; } } catch (_) {}
-      }
-      if (w.Discourse?.__container__) {
-        const r = w.Discourse.__container__.lookup('router:main');
-        if (r?.handleURL) { r.handleURL(path); return true; }
-      }
-    } catch (_) {}
-    return false;
-  }
-
-  // ---- watch + reveal ----
-
-  function watch(url, g) { stopWatch(); watchTimer = setInterval(() => { if (gen !== g || activeUrl !== url) stopWatch(); else if (reveal(url)) stopWatch(); }, WATCH_IV); }
-  function stopWatch() { if (watchTimer) { clearInterval(watchTimer); watchTimer = 0; } }
-
-  function isReady(f) {
-    try {
-      const d = f?.contentDocument;
-      if (!d) return false;
-      return Boolean(d.querySelector(CONTENT_READY_SEL)) || (Boolean(d.body?.childElementCount) && d.readyState === 'complete');
-    } catch (_) { return false; }
-  }
-
-  function reveal(url) {
-    try {
-      if (!panelIframe || activeUrl !== url) return false;
-      syncLayout();
-      const href = safeHref(panelIframe);
-      const matched = !href || same(href, url) || same(loadedUrl, url);
-      if (matched && isReady(panelIframe)) {
-        loadedUrl = url;
-        hideLoading();
-        panelIframe.style.visibility = '';
-        return true;
-      }
-    } catch (e) { console.warn('[LSR] reveal:', e); }
-    return false;
-  }
-
-  function safeHref(f) { try { return f?.contentWindow?.location?.href || ''; } catch (_) { return ''; } }
-
-  // ---- loading UI ----
+  // ---- loading ----
 
   function showLoading() {
     if (!loadingEl) return;
-    syncBrand();
+    syncLoadingBrand();
     loadingEl.style.display = 'flex';
-    loadingEl.classList.remove('lsr-loading-hidden');
+    requestAnimationFrame(() => {
+      loadingEl.classList.remove('lsr-loading-hidden');
+    });
   }
 
   function hideLoading() {
@@ -383,59 +419,151 @@
     loadingEl.style.display = 'none';
   }
 
-  function syncBrand() {
+  function syncLoadingBrand() {
     if (!loadingEl) return;
-    const img = loadingEl.querySelector('.lsr-loading-logo');
-    if (!(img instanceof HTMLImageElement)) return;
-    const src = brandSrc();
-    if (!src) { loadingEl.classList.remove('lsr-loading-has-logo'); img.hidden = true; img.removeAttribute('src'); return; }
-    if (img.currentSrc !== src && img.src !== src) img.src = src;
-    img.hidden = false;
+    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
+    if (!(logoEl instanceof HTMLImageElement)) return;
+    const src = resolveSiteBrandSrc();
+    if (!src) {
+      loadingEl.classList.remove('lsr-loading-has-logo');
+      logoEl.hidden = true;
+      logoEl.removeAttribute('src');
+      return;
+    }
+    if (logoEl.currentSrc !== src && logoEl.src !== src) logoEl.src = src;
+    logoEl.hidden = false;
     loadingEl.classList.add('lsr-loading-has-logo');
   }
 
-  function brandSrc() {
-    const logo = document.querySelector('#site-logo, .d-header .title .logo img, .d-header .logo-big, .d-header .logo-small');
-    if (logo instanceof HTMLImageElement) return logo.currentSrc || logo.src || '';
-    const fav = document.querySelector('link[rel~="icon"][href], link[rel="apple-touch-icon"][href]');
-    return fav instanceof HTMLLinkElement ? norm(fav.href) : '';
+  function resolveSiteBrandSrc() {
+    const logoImg = document.querySelector(
+      '#site-logo, .d-header .title .logo img, .d-header .logo-big, .d-header .logo-small'
+    );
+    if (logoImg instanceof HTMLImageElement) return logoImg.currentSrc || logoImg.src || '';
+    const favicon = document.querySelector('link[rel~="icon"][href], link[rel="apple-touch-icon"][href]');
+    if (favicon instanceof HTMLLinkElement) return normalizeUrl(favicon.href);
+    return '';
   }
 
-  // ---- layout injection ----
+  // ---- loading watch + reveal ----
 
-  function injectLayout(doc) {
+  function startLoadingWatch(url) {
+    stopLoadingWatch();
+    loadingWatchTimer = window.setInterval(() => {
+      if (activeTopicUrl !== url) { stopLoadingWatch(); return; }
+      if (tryReveal(url)) stopLoadingWatch();
+    }, LOADING_WATCH_INTERVAL_MS);
+  }
+
+  function stopLoadingWatch() {
+    if (!loadingWatchTimer) return;
+    window.clearInterval(loadingWatchTimer);
+    loadingWatchTimer = 0;
+  }
+
+  function isIframeReady(iframe) {
+    try {
+      const doc = iframe?.contentDocument;
+      if (!doc) return false;
+      const hasContent = Boolean(doc.querySelector(CONTENT_READY_SELECTOR));
+      const bodyReady = Boolean(doc.body && doc.body.childElementCount > 0);
+      return hasContent || (bodyReady && doc.readyState === 'complete');
+    } catch (_) { return false; }
+  }
+
+  function tryReveal(url) {
+    try {
+      if (!iframeEl || activeTopicUrl !== url) return false;
+      syncIframeLayout();
+
+      const href = safeIframeHref(iframeEl);
+      const matched = !href || sameTopic(href, url) || sameTopic(loadedTopicUrl, url);
+
+      if (matched && isIframeReady(iframeEl)) {
+        loadedTopicUrl = url;
+        hideLoading();
+        iframeEl.style.visibility = '';
+        return true;
+      }
+    } catch (e) {
+      console.warn('[LinuxDo Side Reader] tryReveal:', e);
+    }
+    return false;
+  }
+
+  function safeIframeHref(iframe) {
+    try { return iframe?.contentWindow?.location?.href || ''; } catch (_) { return ''; }
+  }
+
+  function injectLayoutIntoDoc(doc) {
     if (!doc) return;
-    const t = doc.head || doc.documentElement;
-    if (!t) return;
-    let s = doc.getElementById(STYLE_ID);
-    if (!s) { s = doc.createElement('style'); s.id = STYLE_ID; t.appendChild(s); }
-    if (s.textContent !== LAYOUT_CSS) s.textContent = LAYOUT_CSS;
+    const target = doc.head || doc.documentElement;
+    if (!target) return;
+    let el = doc.getElementById(IFRAME_STYLE_ID);
+    if (!el) { el = doc.createElement('style'); el.id = IFRAME_STYLE_ID; target.appendChild(el); }
+    if (el.textContent !== IFRAME_LAYOUT_STYLE) el.textContent = IFRAME_LAYOUT_STYLE;
   }
 
-  function syncLayout() { try { injectLayout(panelIframe?.contentDocument); } catch (_) {} }
+  function syncIframeLayout() {
+    try { injectLayoutIntoDoc(iframeEl?.contentDocument); } catch (_) {}
+  }
 
   // ---- resize ----
 
   function initResize() {
-    const h = panelEl.querySelector('.lsr-resize-handle');
-    let sx = 0, sw = 0;
-    h.addEventListener('mousedown', e => {
-      e.preventDefault(); sx = e.clientX; sw = panelEl.offsetWidth;
+    const handle = panelEl.querySelector('.lsr-resize-handle');
+    let startX = 0, startWidth = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startWidth = panelEl.offsetWidth;
       document.body.classList.add('lsr-resizing');
-      document.addEventListener('mousemove', mv); document.addEventListener('mouseup', mu);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
-    function mv(e) { panelEl.style.width = clampW(sw + sx - e.clientX) + 'px'; }
-    function mu() { document.body.classList.remove('lsr-resizing'); document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', mu); saveW(panelEl.offsetWidth); }
+
+    function onMove(e) {
+      panelEl.style.width = clampPanelWidth(startWidth + startX - e.clientX) + 'px';
+    }
+    function onUp() {
+      document.body.classList.remove('lsr-resizing');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      persistPanelWidth(panelEl.offsetWidth);
+    }
   }
 
-  function applySavedWidth() { const w = readW(); if (w !== null) panelEl.style.width = w + 'px'; }
-  function syncWidth() { const c = parseFloat(panelEl?.style.width || ''); if (isFinite(c)) { const cl = clampW(c); if (cl !== c) { panelEl.style.width = cl + 'px'; saveW(cl); } } }
-  function readW() { try { const r = localStorage.getItem(PANEL_WIDTH_KEY); if (!r) return null; const v = parseFloat(r); return isFinite(v) ? clampW(v) : null; } catch (_) { return null; } }
-  function saveW(w) { try { localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(clampW(w)))); } catch (_) {} }
-  function clampW(w) { return Math.min(Math.max(w, PANEL_MIN_W), innerWidth); }
+  function applySavedPanelWidth() {
+    const w = readSavedPanelWidth();
+    if (w !== null) panelEl.style.width = w + 'px';
+  }
 
-  // ---- start ----
+  function syncPanelWidthToViewport() {
+    const cur = Number.parseFloat(panelEl?.style.width || '');
+    if (!Number.isFinite(cur)) return;
+    const clamped = clampPanelWidth(cur);
+    if (clamped !== cur) { panelEl.style.width = clamped + 'px'; persistPanelWidth(clamped); }
+  }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  function readSavedPanelWidth() {
+    try {
+      const raw = window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+      if (!raw) return null;
+      const w = Number.parseFloat(raw);
+      return Number.isFinite(w) ? clampPanelWidth(w) : null;
+    } catch (_) { return null; }
+  }
+
+  function persistPanelWidth(w) {
+    try { window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(Math.round(clampPanelWidth(w)))); } catch (_) {}
+  }
+
+  function clampPanelWidth(w) { return Math.min(Math.max(w, PANEL_MIN_WIDTH), window.innerWidth); }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
