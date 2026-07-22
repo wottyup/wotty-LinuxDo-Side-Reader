@@ -62,3 +62,8 @@
 ## v0.0.44 底部空白彻底修复
 - v0.0.43 仅压了 `#main-outlet`/`#main-outlet-wrapper`/`.container.posts`/`.topic-area` 四个选择器，覆盖不全仍有残留空白。
 - v0.0.44 扩充 `IFRAME_LAYOUT_STYLE`：对 `html,body`、`#main-outlet-wrapper`、`#main-outlet`、`.container.posts`、`.topic-area`、`.posts-wrapper`、`.topic-post`、`#list-area`、`.wrap`、`#main`、`.list-container`、`.latest-topic-list`、`.category-list`、`.topic-list` 以及页脚元素统一 `min-height:0; height:auto`，`#main-outlet-wrapper` 用 `flex:1 1 auto`，彻底消除各层 min-height 撑出的底部空白。
+
+## v0.0.45 右侧帖子尾部空白修复
+- 用户截图显示空白出现在最后一条真实回复之后，说明问题不是普通 `min-height`，而是 iframe 内右侧时间轴/推荐主题/页脚尾部仍参与布局高度计算。
+- `IFRAME_LAYOUT_STYLE` 对 `.topic-area` 加 `align-items:flex-start`，并把 `.timeline-container`、`.topic-navigation`、`.topic-timeline`、`.topic-map` 的 `min-height` 和 `height` 压为 `auto/0`，避免时间轴栏把短帖撑成整屏高度。
+- 同时折叠 `#suggested-topics`、`.suggested-topics`、`.more-topics`、`.topic-footer-main-buttons`、`.topic-above-footer-buttons-outlet`、`footer` 等尾部区域，避免它们在阅读 iframe 内留下看不见但可滚动的占位。

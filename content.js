@@ -31,9 +31,31 @@
       --d-sidebar-width-desktop: 0px !important;
     }
     .d-sidebar, .sidebar-wrapper, .sidebar-container, .admin-sidebar, .sidebar-pane { display: none !important; }
-    .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
-    .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
-    .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
+    .topic-area { align-items: flex-start !important; }
+    .timeline-container {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      align-self: flex-start !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: calc(100vh - 56px) !important;
+    }
+    .topic-navigation {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      align-self: flex-start !important;
+      min-height: 0 !important;
+      height: auto !important;
+    }
+    .topic-timeline, .topic-map {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      min-height: 0 !important;
+      height: auto !important;
+    }
     /* === 消除底部空白：全面压掉 Discourse 各层 min-height / 撑满高度 === */
     html, body {
       min-height: 0 !important;
@@ -64,9 +86,16 @@
     }
     /* 页脚/尾部元素不再额外占高 */
     #main-outlet > .wrap:last-child,
+    #suggested-topics,
+    .suggested-topics,
+    .more-topics,
+    .topic-footer-main-buttons,
+    .topic-above-footer-buttons-outlet,
     .powered-by,
     #main-footer,
     footer {
+      display: none !important;
+      height: 0 !important;
       min-height: 0 !important;
       margin-bottom: 0 !important;
     }

@@ -85,6 +85,9 @@ liunxdo/
 
 ## 📝 版本记录
 
+### v0.0.45 (2026-07-22)
+- 🐛 修复右侧帖子最后一条回复下方仍残留大块空白的问题：限制 iframe 内时间轴栏参与布局的高度，并折叠推荐主题/页脚尾部占位
+
 ### v0.0.44 (2026-07-22)
 - 🐛 彻底修复全屏/高窗口下右侧帖子页面底部残留大块空白的问题，全面压掉 Discourse `#main-outlet-wrapper`/`#main-outlet`/`.topic-area`/`.posts-wrapper`/`.topic-list` 等各层 min-height 撑高
 
