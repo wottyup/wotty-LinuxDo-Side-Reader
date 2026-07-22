@@ -85,6 +85,9 @@ liunxdo/
 
 ## 📝 版本记录
 
+### v0.0.44 (2026-07-22)
+- 🐛 彻底修复全屏/高窗口下右侧帖子页面底部残留大块空白的问题，全面压掉 Discourse `#main-outlet-wrapper`/`#main-outlet`/`.topic-area`/`.posts-wrapper`/`.topic-list` 等各层 min-height 撑高
+
 ### v0.0.43 (2026-07-22)
 - 🐛 修复全屏/高窗口下右侧帖子页面底部出现大块空白占位的问题
 - 🐛 修复拖拽分隔条或窗口缩放后 iframe 内 Discourse 内容不自适应、宽度不跟随响应式变化的问题

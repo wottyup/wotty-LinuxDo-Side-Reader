@@ -58,3 +58,7 @@
 ## v0.0.43 响应式与底部空白修复
 - **底部空白**：iframe 内 Discourse 的 `#main-outlet` / `#main-outlet-wrapper` 带 `min-height` 占位，全屏/高窗口下短帖子下方留出很高空白。在 `IFRAME_LAYOUT_STYLE` 中对 `#main-outlet` / `#main-outlet-wrapper` / `.container.posts` / `.topic-area` 强制 `min-height:0; height:auto`，`#main-outlet-wrapper` 改 `flex:1 1 auto`，`html,body` 取消 `min-height`。
 - **宽度不响应**：拖拽分隔条或窗口缩放时 iframe 尺寸虽变，但 Discourse 内部布局不会自动重排。新增 `notifyIframeResize()`，在 `syncRatioToViewport` 和拖拽 `onMove` 中向 `iframeEl.contentWindow` 派发 `resize` 事件，触发 Discourse 内部重排。
+
+## v0.0.44 底部空白彻底修复
+- v0.0.43 仅压了 `#main-outlet`/`#main-outlet-wrapper`/`.container.posts`/`.topic-area` 四个选择器，覆盖不全仍有残留空白。
+- v0.0.44 扩充 `IFRAME_LAYOUT_STYLE`：对 `html,body`、`#main-outlet-wrapper`、`#main-outlet`、`.container.posts`、`.topic-area`、`.posts-wrapper`、`.topic-post`、`#list-area`、`.wrap`、`#main`、`.list-container`、`.latest-topic-list`、`.category-list`、`.topic-list` 以及页脚元素统一 `min-height:0; height:auto`，`#main-outlet-wrapper` 用 `flex:1 1 auto`，彻底消除各层 min-height 撑出的底部空白。

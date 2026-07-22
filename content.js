@@ -34,11 +34,43 @@
     .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
-    /* 消除 iframe 内多余的底部空白占位（Discourse 主内容区 min-height 撑出的高空白） */
-    #main-outlet, #main-outlet-wrapper, .container.posts, .topic-area { min-height: 0 !important; height: auto !important; }
-    #main-outlet-wrapper { flex: 1 1 auto !important; }
-    html, body { min-height: 0 !important; height: auto !important; }
-  `;
+    /* === 消除底部空白：全面压掉 Discourse 各层 min-height / 撑满高度 === */
+    html, body {
+      min-height: 0 !important;
+      height: auto !important;
+      overscroll-behavior: contain !important;
+    }
+    #main-outlet-wrapper,
+    #main-outlet,
+    .container.posts,
+    .topic-area,
+    .posts-wrapper,
+    .topic-post,
+    #list-area,
+    .wrap,
+    #main {
+      min-height: 0 !important;
+      height: auto !important;
+      flex: 0 1 auto !important;
+    }
+    #main-outlet-wrapper { flex: 1 1 auto !important; max-height: none !important; }
+    /* 帖子列表页：列表容器不要撑满整屏 */
+    .list-container,
+    .latest-topic-list,
+    .category-list,
+    .topic-list {
+      min-height: 0 !important;
+      height: auto !important;
+    }
+    /* 页脚/尾部元素不再额外占高 */
+    #main-outlet > .wrap:last-child,
+    .powered-by,
+    #main-footer,
+    footer {
+      min-height: 0 !important;
+      margin-bottom: 0 !important;
+    }
+`;
 
   let paneEl = null;
   let bodyEl = null;
