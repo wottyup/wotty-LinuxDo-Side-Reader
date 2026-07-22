@@ -58,7 +58,7 @@
   // ---- init ----
 
   function init() {
-    if (document.documentElement.classList.contains('lsr-split')) return;
+    if (document.getElementById('linuxdo-side-reader-pane')) return;
 
     isTopicPage = /\/t\//.test(location.pathname);
     document.documentElement.classList.add('lsr-split', isTopicPage ? 'lsr-split-topic' : 'lsr-split-list');
@@ -93,6 +93,7 @@
 
   function createPane() {
     paneEl = document.createElement('div');
+    paneEl.id = 'linuxdo-side-reader-pane';
     paneEl.className = 'lsr-pane';
     paneEl.innerHTML = `
       <div class="lsr-header">

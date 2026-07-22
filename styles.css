@@ -3,6 +3,11 @@
 /* === 双栏根：CSS 变量控制 iframe 那一半的宽度 === */
 html.lsr-split {
   --lsr-pane-w: 50vw;
+  /* 首帧 pane 尚未创建时，iframe 那一半露出的 html 背景设为白色，避免闪透/空白 */
+  background: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  html.lsr-split { background: #1a1a2e; }
 }
 
 /* === 收窄当前页，给 iframe 那一半腾位置（无过渡，避免主页面滑动闪动） === */

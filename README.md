@@ -59,7 +59,8 @@ node generate-icons.js
 ```
 liunxdo/
 ├── manifest.json        # Chrome 扩展配置文件 (Manifest V3)
-├── content.js           # 内容脚本 - 双栏布局、链接拦截、iframe 路由
+├── early.js             # document_start 早期注入双栏布局
+├── content.js           # 内容脚本 - 双栏逻辑、链接拦截、iframe 路由
 ├── styles.css           # 双栏样式（含深色模式适配）
 ├── generate-icons.js    # 图标生成脚本
 ├── docs/
@@ -83,6 +84,11 @@ liunxdo/
 - 支持拖拽分隔条调整两栏比例（持久化），可折叠恢复整页
 
 ## 📝 版本记录
+
+### v0.0.40 (2026-07-22)
+- ⚡ 新增 document_start 早期注入（early.js），首帧即双栏布局，不再「先全宽再跳两半」
+- 🔧 首帧 pane 未创建时右半以白色 html 背景占位，过渡无缝
+- 🔧 manifest 拆分为早期注入 + document_idle 主脚本两条 content_scripts
 
 ### v0.0.39 (2026-07-22)
 - ✨ 列表页刷新后自动打开第一个帖子，右栏不再留空白占位

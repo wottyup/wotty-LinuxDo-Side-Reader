@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinuxDo Side Reader",
-  "version": "0.0.39",
+    "version": "0.0.40",
   "description": "把 linux.do 改成双栏：左半边帖子列表，右半边当前帖子页面",
   "permissions": [],
   "host_permissions": [
@@ -10,8 +10,13 @@
   "content_scripts": [
     {
       "matches": ["https://linux.do/*"],
-      "js": ["content.js"],
       "css": ["styles.css"],
+      "js": ["early.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://linux.do/*"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
