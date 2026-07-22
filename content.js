@@ -496,8 +496,9 @@
   }
 
   function syncRatioToViewport() {
-    setPaneWidthPx(clampPaneWidth(paneWidthPx()));
-    persistRatio();
+    // 窗口变化时按「存储的比例」重算像素，两侧等比缩放，不会一边固定挤另一边
+    const r = readRatio();
+    setPaneWidthPx(clampPaneWidth(Math.round((r == null ? 0.5 : r) * window.innerWidth)));
   }
 
   function readRatio() {
