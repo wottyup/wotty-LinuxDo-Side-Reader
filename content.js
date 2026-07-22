@@ -23,9 +23,7 @@
   const MIN_RATIO = 0.2;
   const MAX_RATIO = 0.8;
 
-  // 注入到 iframe 内的布局样式：
-  // - 隐藏左侧主侧边栏（加宽选择器，避免侧边栏先渲染再被隐藏的闪烁）
-  // - 隐藏 Discourse 自带的启动页/加载图标/骨架，避免与我们的加载层重复转圈
+  // 注入到 iframe 内的布局样式：只隐藏左侧主侧边栏，保留 Discourse 原生加载图标（logo + 蓝点）
   const IFRAME_LAYOUT_STYLE = `
     html, body { overscroll-behavior: contain !important; }
     :root {
@@ -33,11 +31,6 @@
       --d-sidebar-width-desktop: 0px !important;
     }
     .d-sidebar, .sidebar-wrapper, .sidebar-container, .admin-sidebar, .sidebar-pane { display: none !important; }
-    /* Discourse 启动页 / 加载层（多种 class 兼容） */
-    #d-splash, .d-splash, .preload-spinner, .loading-container, .loading-frame,
-    .preloader, .boot-loader, .spinner-container, .spinner, .loading-indicator,
-    .skeleton-loader, .topic-list-skeleton, .loading-overlay, .ember-load-indicator,
-    .page-loader, .discourse-load-indicator { display: none !important; visibility: hidden !important; }
     .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
@@ -47,7 +40,6 @@
   let bodyEl = null;
   let iframeEl = null;
   let loadingEl = null;
-  let spinnerEl = null;
   let loadingTextEl = null;
   let newtabBtnEl = null;
   let titleEl = null;
@@ -76,14 +68,14 @@
     bindEvents();
 
     if (isTopicPage) {
-      // 左栏 iframe 直接显示 /latest：提前注入 CSS 挡侧边栏/启动页，内容就绪后再揭开
+      // 左栏 iframe 直接显示 /latest：露出 Discourse 原生加载图标，内容就绪后继续显示
       titleEl.textContent = '帖子列表';
       newtabBtnEl.href = HOST_URL;
-      if (iframeEl) iframeEl.style.visibility = 'hidden';
-      showLoading('正在加载列表...');
+      hideOverlay();
       ensureIframe(HOST_URL);
-      startEarlyCssInject(false);
-      watchReady(() => hideOverlay());
+      showIframeNativeLoading();
+      startEarlyCssInject();
+      watchReady(() => { /* 原生 splash 会自行消失 */ });
     } else {
       // 右栏先占位，等点击帖子再加载
       titleEl.textContent = 'LinuxDo Side Reader';
@@ -114,12 +106,8 @@
         </div>
       </div>
       <div class="lsr-body">
-        <div class="lsr-loading">
-          <div class="lsr-loading-brand">
-            <img class="lsr-loading-logo" alt="LINUX DO" hidden>
-            <div class="lsr-spinner"></div>
-          </div>
-          <span class="lsr-loading-text">正在加载...</span>
+        <div class="lsr-loading lsr-placeholder">
+          <span class="lsr-loading-text">点击左侧帖子开始阅读</span>
         </div>
       </div>
       <div class="lsr-splitter" title="拖拽调整两栏比例"></div>
@@ -128,7 +116,6 @@
 
     bodyEl = paneEl.querySelector('.lsr-body');
     loadingEl = paneEl.querySelector('.lsr-loading');
-    spinnerEl = paneEl.querySelector('.lsr-spinner');
     loadingTextEl = paneEl.querySelector('.lsr-loading-text');
     newtabBtnEl = paneEl.querySelector('.lsr-btn-newtab');
     titleEl = paneEl.querySelector('.lsr-title');
@@ -230,16 +217,17 @@
       return;
     }
 
-    // 加载期间强制隐藏 iframe，只显示我们自己的单一 spinner，挡住 Discourse 启动页
-    if (iframeEl) iframeEl.style.visibility = 'hidden';
-    showLoading('正在加载帖子...');
+    // 露出 iframe，使用 Discourse 原生加载图标（logo + 蓝点）
     mountIframe();
+    hideOverlay();
+    showIframeNativeLoading();
     if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
       navigateIframeTo(normalized);
     }
     watchTopic(normalized, () => {
       loadedTopicUrl = normalized;
-      hideOverlay();
+      // 原生 splash 会自行消失，这里只确保 iframe 可见
+      if (iframeEl) iframeEl.style.visibility = '';
     });
   }
 
@@ -250,7 +238,7 @@
     const f = document.createElement('iframe');
     f.className = 'lsr-iframe';
     f.setAttribute('sandbox', IFRAME_SANDBOX);
-    f.style.visibility = 'hidden';
+    // 默认可见，让 Discourse 原生启动页（logo + 蓝点）直接展示
     f.addEventListener('load', onIframeLoad);
     f.addEventListener('error', () => { loadedTopicUrl = ''; });
     bodyEl.appendChild(f);
@@ -270,15 +258,15 @@
     injectLayoutIntoDoc(iframeEl.contentDocument);
 
     if (isTopicPage) {
-      // 左栏 /latest：CSS 已在早期注入，这里补一次并绑定拦截；就绪后由 watchReady 揭开
+      // 左栏 /latest：绑定拦截；提前注入的 CSS 只挡侧边栏，保留原生 splash
       bindIframeClickCapture();
       injectLayoutIntoDoc(iframeEl.contentDocument);
     } else if (activeTopicUrl) {
-      // 列表模式：整页 reload 方式加载帖子后的 load 事件
+      // 列表模式：整页 reload 后的 load 事件
       injectLayoutIntoDoc(iframeEl.contentDocument);
       watchTopic(activeTopicUrl, () => {
         loadedTopicUrl = activeTopicUrl;
-        hideOverlay();
+        if (iframeEl) iframeEl.style.visibility = '';
       });
     }
   }
@@ -351,33 +339,27 @@
   }
 
   // ---- loading / placeholder ----
+  // 加载态不再画自定义转圈：直接露出 iframe，使用 Discourse 原生加载图标。
+  // 我们的覆盖层只用于「空闲占位」提示。
 
-  function showLoading(text) {
-    if (!loadingEl) return;
-    if (text && loadingTextEl) loadingTextEl.textContent = text;
-    // 只显示一个 spinner，不显示品牌 logo（避免和 Discourse 启动页叠成多个图标）
-    if (spinnerEl) spinnerEl.style.display = '';
-    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
-    if (logoEl) logoEl.hidden = true;
-    loadingEl.style.display = 'flex';
-    requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
+  function showIframeNativeLoading() {
+    if (iframeEl) iframeEl.style.visibility = '';
+    hideOverlay();
   }
 
   function showPlaceholder() {
     if (!loadingEl) return;
     if (loadingTextEl) loadingTextEl.textContent = '点击左侧帖子开始阅读';
-    if (spinnerEl) spinnerEl.style.display = 'none';
-    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
-    if (logoEl) logoEl.hidden = true;
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
+    // 占位时 iframe 仍在预热，但被覆盖层挡住
+    if (iframeEl) iframeEl.style.visibility = 'hidden';
   }
 
   function hideOverlay() {
     if (!loadingEl) return;
     loadingEl.classList.add('lsr-overlay-hidden');
     loadingEl.style.display = 'none';
-    if (iframeEl) iframeEl.style.visibility = '';
   }
 
   // ---- readiness watch ----

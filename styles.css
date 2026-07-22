@@ -95,7 +95,7 @@ html.lsr-split-topic .lsr-pane {
   background: #fff;
 }
 
-/* === 加载 / 占位覆盖层（必须完全不透明，挡住 iframe 内 Discourse 启动页） === */
+/* === 空闲占位覆盖层（仅「点击左侧帖子开始阅读」用；加载态直接露出 iframe 原生图标） === */
 .lsr-loading {
   position: absolute;
   top: 0;
@@ -120,26 +120,10 @@ html.lsr-split-topic .lsr-pane {
   visibility: hidden;
   pointer-events: none;
 }
-
-/* 只保留一个转圈：隐藏品牌 logo，避免和 spinner / Discourse 启动页叠成三个图标 */
-.lsr-loading-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
+.lsr-loading-text {
+  color: #888;
+  font-size: 14px;
 }
-.lsr-loading-logo {
-  display: none !important;
-}
-.lsr-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #e0e0e0;
-  border-top-color: #0b0b7e;
-  border-radius: 50%;
-  animation: lsr-spin 0.8s linear infinite;
-}
-@keyframes lsr-spin { to { transform: rotate(360deg); } }
 
 /* === 分隔条 === */
 .lsr-splitter {
