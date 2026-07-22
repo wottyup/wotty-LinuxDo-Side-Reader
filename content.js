@@ -68,14 +68,13 @@
     bindEvents();
 
     if (isTopicPage) {
-      // 左栏 iframe 直接显示 /latest：露出 Discourse 原生加载图标，内容就绪后继续显示
+      // 左栏 iframe 直接显示 /latest：加载期间显示转圈，就绪后揭开
       titleEl.textContent = '帖子列表';
       newtabBtnEl.href = HOST_URL;
-      hideOverlay();
+      showLoading('正在加载列表...');
       ensureIframe(HOST_URL);
-      showIframeNativeLoading();
       startEarlyCssInject();
-      watchReady(() => { /* 原生 splash 会自行消失 */ });
+      watchReady(() => hideOverlay());
     } else {
       // 右栏先占位，等点击帖子再加载
       titleEl.textContent = 'LinuxDo Side Reader';
@@ -106,8 +105,9 @@
         </div>
       </div>
       <div class="lsr-body">
-        <div class="lsr-loading lsr-placeholder">
-          <span class="lsr-loading-text">点击左侧帖子开始阅读</span>
+        <div class="lsr-loading">
+          <div class="lsr-spinner"></div>
+          <span class="lsr-loading-text">正在加载...</span>
         </div>
       </div>
       <div class="lsr-splitter" title="拖拽调整两栏比例"></div>
@@ -202,17 +202,15 @@
       return;
     }
 
-    // 露出 iframe，使用 Discourse 原生加载图标（logo + 蓝点）
+    // 加载期间：单一转圈覆盖层 + 隐藏 iframe，就绪后揭开
+    showLoading('正在加载帖子...');
     mountIframe();
-    hideOverlay();
-    showIframeNativeLoading();
     if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
       navigateIframeTo(normalized);
     }
     watchTopic(normalized, () => {
       loadedTopicUrl = normalized;
-      // 原生 splash 会自行消失，这里只确保 iframe 可见
-      if (iframeEl) iframeEl.style.visibility = '';
+      hideOverlay();
     });
   }
 
@@ -223,7 +221,7 @@
     const f = document.createElement('iframe');
     f.className = 'lsr-iframe';
     f.setAttribute('sandbox', IFRAME_SANDBOX);
-    // 默认可见，让 Discourse 原生启动页（logo + 蓝点）直接展示
+    f.style.visibility = 'hidden'; // 加载期间隐藏，由 hideOverlay 在就绪后揭开
     f.addEventListener('load', onIframeLoad);
     f.addEventListener('error', () => { loadedTopicUrl = ''; });
     bodyEl.appendChild(f);
@@ -243,15 +241,15 @@
     injectLayoutIntoDoc(iframeEl.contentDocument);
 
     if (isTopicPage) {
-      // 左栏 /latest：绑定拦截；提前注入的 CSS 只挡侧边栏，保留原生 splash
+      // 左栏 /latest：绑定拦截；CSS 已早期注入，这里补一次
       bindIframeClickCapture();
       injectLayoutIntoDoc(iframeEl.contentDocument);
     } else if (activeTopicUrl) {
-      // 列表模式：整页 reload 后的 load 事件
+      // 列表模式：整页 reload 后的 load 事件，就绪后揭开
       injectLayoutIntoDoc(iframeEl.contentDocument);
       watchTopic(activeTopicUrl, () => {
         loadedTopicUrl = activeTopicUrl;
-        if (iframeEl) iframeEl.style.visibility = '';
+        hideOverlay();
       });
     }
   }
@@ -324,27 +322,30 @@
   }
 
   // ---- loading / placeholder ----
-  // 加载态不再画自定义转圈：直接露出 iframe，使用 Discourse 原生加载图标。
-  // 我们的覆盖层只用于「空闲占位」提示。
+  // 加载态：不透明纯白覆盖层 + 单一转圈，加载期间隐藏 iframe，就绪后揭开。
+  // 不再使用 Discourse 原生启动页（其前后有空白间隙）。
 
-  function showIframeNativeLoading() {
-    if (iframeEl) iframeEl.style.visibility = '';
-    hideOverlay();
+  function showLoading(text) {
+    if (!loadingEl) return;
+    if (text && loadingTextEl) loadingTextEl.textContent = text;
+    if (iframeEl) iframeEl.style.visibility = 'hidden';
+    loadingEl.style.display = 'flex';
+    requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
   }
 
   function showPlaceholder() {
     if (!loadingEl) return;
     if (loadingTextEl) loadingTextEl.textContent = '点击左侧帖子开始阅读';
+    if (iframeEl) iframeEl.style.visibility = 'hidden';
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
-    // 占位时 iframe 仍在预热，但被覆盖层挡住
-    if (iframeEl) iframeEl.style.visibility = 'hidden';
   }
 
   function hideOverlay() {
     if (!loadingEl) return;
     loadingEl.classList.add('lsr-overlay-hidden');
     loadingEl.style.display = 'none';
+    if (iframeEl) iframeEl.style.visibility = '';
   }
 
   // ---- readiness watch ----

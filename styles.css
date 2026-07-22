@@ -95,7 +95,7 @@ html.lsr-split-topic .lsr-pane {
   background: #fff;
 }
 
-/* === 空闲占位覆盖层（仅「点击左侧帖子开始阅读」用；加载态直接露出 iframe 原生图标） === */
+/* === 加载 / 占位覆盖层（不透明纯白底，单一转圈，加载期间挡住 iframe） === */
 .lsr-loading {
   position: absolute;
   top: 0;
@@ -120,6 +120,15 @@ html.lsr-split-topic .lsr-pane {
   visibility: hidden;
   pointer-events: none;
 }
+.lsr-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #0b0b7e;
+  border-radius: 50%;
+  animation: lsr-spin 0.8s linear infinite;
+}
+@keyframes lsr-spin { to { transform: rotate(360deg); } }
 .lsr-loading-text {
   color: #888;
   font-size: 14px;
