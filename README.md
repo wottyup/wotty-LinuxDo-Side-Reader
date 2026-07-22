@@ -85,6 +85,11 @@ liunxdo/
 
 ## 📝 版本记录
 
+### v0.0.42 (2026-07-22)
+- ⚡ 悬停预取帖子页 + JSON 进 HTTP 缓存，点击时 iframe 直接走缓存
+- ⚡ 加载期间不再 visibility:hidden（避免被浏览器节流），改用不透明覆盖层盖住
+- ⚡ iframe 设 fetchPriority=high
+
 ### v0.0.41 (2026-07-22)
 - ⚡ 首次打开帖子改为直接用帖子 URL 创建 iframe，省去「先加载 /latest 再 SPA 路由」两步
 - ⚡ 就绪轮询间隔 80ms → 50ms，内容出现后揭示更快

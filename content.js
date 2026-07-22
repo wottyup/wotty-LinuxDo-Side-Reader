@@ -137,9 +137,9 @@
   // ---- events ----
 
   function bindEvents() {
-    // 列表模式：只在「点击」时拦截 /t/ 链接，在右栏 iframe 打开
-    // （不再悬停预热——右栏 iframe 一直可见，悬停导航会导致没点也跳）
+    // 列表模式：点击拦截 /t/ 链接在右栏打开；悬停只做预取（不导航，不会让右栏跳动）
     document.addEventListener('click', handleLinkClick, true);
+    document.addEventListener('pointerover', handlePointerOver, true);
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') setCollapsed();
@@ -147,6 +147,33 @@
 
     window.addEventListener('resize', syncRatioToViewport);
     initResize();
+  }
+
+  // 悬停预取：提前把帖子页 + JSON 拉进 HTTP 缓存，点击时 iframe 直接走缓存
+  const prefetchedUrls = new Set();
+  function prefetchTopic(url) {
+    const normalized = normalizeUrl(url);
+    if (prefetchedUrls.has(normalized)) return;
+    prefetchedUrls.add(normalized);
+    const id = topicIdOf(normalized);
+    const hrefs = [normalized];
+    if (id) hrefs.push(`/t/${id}.json`);
+    for (const h of hrefs) {
+      try {
+        const link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = h;
+        if (h.endsWith('.json')) { link.as = 'fetch'; link.crossOrigin = 'anonymous'; }
+        document.head.appendChild(link);
+      } catch (_) {}
+    }
+  }
+
+  function handlePointerOver(e) {
+    if (isTopicPage) return;
+    const link = findTopicLink(e.target);
+    if (!link) return;
+    prefetchTopic(link.href);
   }
 
   function findTopicLink(target) {
@@ -190,7 +217,11 @@
       if (activeTopicUrl) return; // 用户已点或已自动打开，停止
       const links = document.querySelectorAll('a[href*="/t/"]');
       for (const a of links) {
-        if (TOPIC_LINK_PATTERN.test(a.href)) { openTopic(a.href); return; }
+        if (TOPIC_LINK_PATTERN.test(a.href)) {
+          prefetchTopic(a.href); // 先预取热身缓存
+          openTopic(a.href);
+          return;
+        }
       }
       if (++tries < 80) window.setTimeout(tick, 100); // 最多等 8s
     };
@@ -202,6 +233,7 @@
     activeTopicUrl = normalized;
     newtabBtnEl.href = normalized;
     updateTitle(normalized);
+    prefetchTopic(normalized);
 
     if (isIframeReady(iframeEl) && sameTopic(loadedTopicUrl, normalized)) {
       mountIframe();
@@ -233,7 +265,9 @@
     const f = document.createElement('iframe');
     f.className = 'lsr-iframe';
     f.setAttribute('sandbox', IFRAME_SANDBOX);
-    f.style.visibility = 'hidden'; // 加载期间隐藏，由 hideOverlay 在就绪后揭开
+    f.fetchPriority = 'high';
+    // 不设 visibility:hidden——隐藏 iframe 会被浏览器节流降速。
+    // 改为始终可见，用不透明覆盖层盖住，加载完毕隐藏覆盖层即可。
     f.addEventListener('load', onIframeLoad);
     f.addEventListener('error', () => { loadedTopicUrl = ''; });
     bodyEl.appendChild(f);
@@ -334,14 +368,13 @@
   }
 
   // ---- loading / placeholder ----
-  // 加载态：不透明纯白覆盖层 + 单一转圈，加载期间隐藏 iframe，就绪后揭开。
-  // 不再使用 Discourse 原生启动页（其前后有空白间隙）。
+  // 加载态：不透明纯白覆盖层 + 单一转圈盖住 iframe；iframe 始终可见（避免被节流），
+  // 就绪后隐藏覆盖层即露出内容。
 
   function showLoading(text) {
     if (!loadingEl) return;
     if (text && loadingTextEl) loadingTextEl.textContent = text;
     if (spinnerEl) spinnerEl.style.display = '';
-    if (iframeEl) iframeEl.style.visibility = 'hidden';
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
   }
@@ -350,7 +383,6 @@
     if (!loadingEl) return;
     if (loadingTextEl) loadingTextEl.textContent = '点击左侧帖子开始阅读';
     if (spinnerEl) spinnerEl.style.display = 'none'; // 占位态不转圈
-    if (iframeEl) iframeEl.style.visibility = 'hidden';
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
   }
@@ -359,7 +391,6 @@
     if (!loadingEl) return;
     loadingEl.classList.add('lsr-overlay-hidden');
     loadingEl.style.display = 'none';
-    if (iframeEl) iframeEl.style.visibility = '';
   }
 
   // ---- readiness watch ----
