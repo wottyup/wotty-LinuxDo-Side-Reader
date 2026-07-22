@@ -84,6 +84,12 @@ liunxdo/
 
 ## 📝 版本记录
 
+### v0.0.33 (2026-07-22)
+- 🐛 加载层改为不透明纯白底，彻底挡住 iframe 内 Discourse 启动页
+- 🐛 加载态只显示一个 spinner，隐藏品牌 logo，不再叠出三个加载图标
+- 🔧 加载期间强制隐藏 iframe（visibility:hidden），内容就绪后再揭开
+- 🔧 扩展 iframe 内 Discourse 启动页选择器（#d-splash / .preload-spinner 等）
+
 ### v0.0.32 (2026-07-22)
 - ⚡ 帖子页左栏 /latest 改为尽早揭示 iframe，不再长时间挡在转圈后，加载更快
 - 🐛 提前把布局 CSS 注入 iframe（独立定时器轮询），消除侧边栏先渲染再被隐藏的闪烁

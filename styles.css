@@ -95,7 +95,7 @@ html.lsr-split-topic .lsr-pane {
   background: #fff;
 }
 
-/* === 加载 / 占位覆盖层 === */
+/* === 加载 / 占位覆盖层（必须完全不透明，挡住 iframe 内 Discourse 启动页） === */
 .lsr-loading {
   position: absolute;
   top: 0;
@@ -106,14 +106,14 @@ html.lsr-split-topic .lsr-pane {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  background: rgba(255, 255, 255, 0.96);
-  z-index: 2;
+  gap: 14px;
+  background: #ffffff;
+  z-index: 5;
   color: #888;
   font-size: 14px;
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.18s ease, visibility 0.18s ease;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 .lsr-loading.lsr-overlay-hidden {
   opacity: 0;
@@ -121,19 +121,15 @@ html.lsr-split-topic .lsr-pane {
   pointer-events: none;
 }
 
+/* 只保留一个转圈：隐藏品牌 logo，避免和 spinner / Discourse 启动页叠成三个图标 */
 .lsr-loading-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 84px;
+  min-height: 40px;
 }
 .lsr-loading-logo {
-  display: block;
-  max-width: 120px;
-  max-height: 72px;
-  width: auto;
-  height: auto;
-  object-fit: contain;
+  display: none !important;
 }
 .lsr-spinner {
   width: 36px;
@@ -208,7 +204,7 @@ html.dark .lsr-btn:hover,
 body.dark .lsr-btn:hover { background: #2a2a4a; color: #e0e0e0; }
 
 html.dark .lsr-loading,
-body.dark .lsr-loading { background: rgba(26, 26, 46, 0.96); color: #aaa; }
+body.dark .lsr-loading { background: #1a1a2e; color: #aaa; }
 
 html.dark .lsr-spinner,
 body.dark .lsr-spinner { border-color: #2a2a4a; border-top-color: #0b0b7e; }

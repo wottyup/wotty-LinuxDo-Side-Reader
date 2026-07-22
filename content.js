@@ -25,7 +25,7 @@
 
   // 注入到 iframe 内的布局样式：
   // - 隐藏左侧主侧边栏（加宽选择器，避免侧边栏先渲染再被隐藏的闪烁）
-  // - 隐藏 Discourse 自带的加载图标/骨架，避免与我们的加载层重复转圈
+  // - 隐藏 Discourse 自带的启动页/加载图标/骨架，避免与我们的加载层重复转圈
   const IFRAME_LAYOUT_STYLE = `
     html, body { overscroll-behavior: contain !important; }
     :root {
@@ -33,8 +33,11 @@
       --d-sidebar-width-desktop: 0px !important;
     }
     .d-sidebar, .sidebar-wrapper, .sidebar-container, .admin-sidebar, .sidebar-pane { display: none !important; }
-    .loading-container, .loading-frame, .preloader, .boot-loader, .spinner-container,
-    .skeleton-loader, .topic-list-skeleton, .loading-overlay { display: none !important; }
+    /* Discourse 启动页 / 加载层（多种 class 兼容） */
+    #d-splash, .d-splash, .preload-spinner, .loading-container, .loading-frame,
+    .preloader, .boot-loader, .spinner-container, .spinner, .loading-indicator,
+    .skeleton-loader, .topic-list-skeleton, .loading-overlay, .ember-load-indicator,
+    .page-loader, .discourse-load-indicator { display: none !important; visibility: hidden !important; }
     .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
@@ -73,12 +76,14 @@
     bindEvents();
 
     if (isTopicPage) {
-      // 左栏 iframe 直接显示 /latest：尽早注入 CSS 并揭示，避免长时间转圈
+      // 左栏 iframe 直接显示 /latest：提前注入 CSS 挡侧边栏/启动页，内容就绪后再揭开
       titleEl.textContent = '帖子列表';
       newtabBtnEl.href = HOST_URL;
+      if (iframeEl) iframeEl.style.visibility = 'hidden';
       showLoading('正在加载列表...');
       ensureIframe(HOST_URL);
-      earlyInjectAndReveal();
+      startEarlyCssInject(false);
+      watchReady(() => hideOverlay());
     } else {
       // 右栏先占位，等点击帖子再加载
       titleEl.textContent = 'LinuxDo Side Reader';
@@ -137,8 +142,6 @@
     expandBtnEl.textContent = '⇤';
     expandBtnEl.addEventListener('click', setExpanded);
     document.body.appendChild(expandBtnEl);
-
-    syncLoadingBrand();
   }
 
   // ---- events ----
@@ -220,7 +223,6 @@
     activeTopicUrl = normalized;
     newtabBtnEl.href = normalized;
     updateTitle(normalized);
-    hidePlaceholder();
 
     if (isIframeReady(iframeEl) && sameTopic(loadedTopicUrl, normalized)) {
       mountIframe();
@@ -228,6 +230,8 @@
       return;
     }
 
+    // 加载期间强制隐藏 iframe，只显示我们自己的单一 spinner，挡住 Discourse 启动页
+    if (iframeEl) iframeEl.style.visibility = 'hidden';
     showLoading('正在加载帖子...');
     mountIframe();
     if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
@@ -266,9 +270,9 @@
     injectLayoutIntoDoc(iframeEl.contentDocument);
 
     if (isTopicPage) {
-      // 左栏 /latest：CSS 已在早期注入，这里补一次并揭示 + 绑定拦截
+      // 左栏 /latest：CSS 已在早期注入，这里补一次并绑定拦截；就绪后由 watchReady 揭开
       bindIframeClickCapture();
-      revealIframe();
+      injectLayoutIntoDoc(iframeEl.contentDocument);
     } else if (activeTopicUrl) {
       // 列表模式：整页 reload 方式加载帖子后的 load 事件
       injectLayoutIntoDoc(iframeEl.contentDocument);
@@ -294,7 +298,7 @@
       iframeEl.src = normalized;
     }
     // 整页 reload 回退：尽早注入 CSS，避免侧边栏先渲染再被隐藏的闪烁
-    startEarlyCssInject(false);
+    startEarlyCssInject();
     loadedTopicUrl = '';
   }
 
@@ -350,9 +354,11 @@
 
   function showLoading(text) {
     if (!loadingEl) return;
-    syncLoadingBrand();
     if (text && loadingTextEl) loadingTextEl.textContent = text;
+    // 只显示一个 spinner，不显示品牌 logo（避免和 Discourse 启动页叠成多个图标）
     if (spinnerEl) spinnerEl.style.display = '';
+    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
+    if (logoEl) logoEl.hidden = true;
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
   }
@@ -361,6 +367,8 @@
     if (!loadingEl) return;
     if (loadingTextEl) loadingTextEl.textContent = '点击左侧帖子开始阅读';
     if (spinnerEl) spinnerEl.style.display = 'none';
+    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
+    if (logoEl) logoEl.hidden = true;
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
   }
@@ -372,31 +380,6 @@
     if (iframeEl) iframeEl.style.visibility = '';
   }
 
-  function hidePlaceholder() {
-    if (!loadingEl) return;
-    if (loadingEl.style.display !== 'none' && loadingTextEl?.textContent === '点击左侧帖子开始阅读') {
-      // 将由 showLoading 接管
-    }
-  }
-
-  function syncLoadingBrand() {
-    if (!loadingEl) return;
-    const logoEl = loadingEl.querySelector('.lsr-loading-logo');
-    if (!(logoEl instanceof HTMLImageElement)) return;
-    const src = resolveSiteBrandSrc();
-    if (!src) { logoEl.hidden = true; logoEl.removeAttribute('src'); return; }
-    if (logoEl.currentSrc !== src && logoEl.src !== src) logoEl.src = src;
-    logoEl.hidden = false;
-  }
-
-  function resolveSiteBrandSrc() {
-    const logoImg = document.querySelector('#site-logo, .d-header .title .logo img, .d-header .logo-big, .d-header .logo-small');
-    if (logoImg instanceof HTMLImageElement) return logoImg.currentSrc || logoImg.src || '';
-    const favicon = document.querySelector('link[rel~="icon"][href], link[rel="apple-touch-icon"][href]');
-    if (favicon instanceof HTMLLinkElement) return normalizeUrl(favicon.href);
-    return '';
-  }
-
   // ---- readiness watch ----
 
   function watchReady(onReady) {
@@ -406,24 +389,15 @@
     }, WATCH_INTERVAL_MS);
   }
 
-  // 帖子模式：尽早把布局 CSS 注入 iframe（在 Discourse 渲染侧边栏之前），
-  // 并在 iframe 文档可用后立即揭示，让 /latest 直接渐进显示，不再长时间挡在转圈后。
-  function earlyInjectAndReveal() {
-    startEarlyCssInject(true);
-  }
-
-  // 独立定时器轮询注入 CSS（不干扰 watchTimer）。reveal=true 时文档可用即揭示 iframe。
-  function startEarlyCssInject(reveal) {
+  // 独立定时器轮询注入 CSS（不干扰 watchTimer）。不揭开 iframe——揭开由 watchReady/watchTopic 负责。
+  function startEarlyCssInject() {
     stopCssInject();
     let tries = 0;
     const MAX = 80; // ~4s
     cssInjectTimer = window.setInterval(() => {
       if (!iframeEl) { stopCssInject(); return; }
       const doc = iframeEl.contentDocument;
-      if (doc) {
-        if (doc.head || doc.documentElement) injectLayoutIntoDoc(doc);
-        if (reveal && doc.body) revealIframe();
-      }
+      if (doc && (doc.head || doc.documentElement)) injectLayoutIntoDoc(doc);
       if (++tries >= MAX) stopCssInject();
     }, 50);
   }
@@ -432,12 +406,6 @@
     if (!cssInjectTimer) return;
     window.clearInterval(cssInjectTimer);
     cssInjectTimer = 0;
-  }
-
-  function revealIframe() {
-    if (!iframeEl) return;
-    if (iframeEl.style.visibility !== '') iframeEl.style.visibility = '';
-    hideOverlay();
   }
 
   function watchTopic(url, onReady) {
