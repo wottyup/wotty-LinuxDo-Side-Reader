@@ -134,10 +134,9 @@
   // ---- events ----
 
   function bindEvents() {
-    // 列表模式：拦截当前页 /t/ 链接，在右栏 iframe 打开
+    // 列表模式：只在「点击」时拦截 /t/ 链接，在右栏 iframe 打开
+    // （不再悬停预热——右栏 iframe 一直可见，悬停导航会导致没点也跳）
     document.addEventListener('click', handleLinkClick, true);
-    document.addEventListener('pointerover', handlePointerOver, true);
-    document.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true });
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') setCollapsed();
@@ -162,21 +161,7 @@
     return Boolean(idA && idB && idA === idB);
   }
 
-  // ---- warmup (列表模式专用) ----
-
-  function handlePointerOver(e) {
-    if (isTopicPage) return;
-    const link = findTopicLink(e.target);
-    if (!link) return;
-    warmupToTopic(link.href);
-  }
-
-  function handleTouchStart(e) {
-    if (isTopicPage) return;
-    const link = findTopicLink(e.target);
-    if (!link) return;
-    warmupToTopic(link.href);
-  }
+  // ---- warmup (仅点击时使用) ----
 
   function handleLinkClick(e) {
     if (isTopicPage) return; // 帖子模式不在当前页拦截
