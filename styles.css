@@ -1,63 +1,39 @@
-/* LinuxDo Side Reader - 样式 */
+/* LinuxDo Side Reader - 双栏视图样式 (v0.0.31) */
 
-/* === iframe 离屏预热宿主（真实尺寸，避免浏览器节流） === */
-#linuxdo-side-reader-iframe-host {
+/* === 双栏根：CSS 变量控制 iframe 那一半的宽度 === */
+html.lsr-split {
+  --lsr-pane-w: 50vw;
+}
+
+/* === 收窄当前页，给 iframe 那一半腾位置 === */
+html.lsr-split-list body {
+  margin-right: var(--lsr-pane-w) !important;
+  transition: margin-right 0.2s ease;
+}
+html.lsr-split-topic body {
+  margin-left: var(--lsr-pane-w) !important;
+  transition: margin-left 0.2s ease;
+}
+
+/* === iframe 那一半的容器 === */
+.lsr-pane {
   position: fixed;
-  left: -10000px;
   top: 0;
-  width: 920px;
   height: 100vh;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  z-index: -1;
-}
-
-#linuxdo-side-reader-iframe-host .lsr-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-/* === 遮罩层 === */
-#linuxdo-side-reader-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0);
-  z-index: 99998;
-  pointer-events: none;
-  transition: background 0.3s ease;
-}
-
-#linuxdo-side-reader-overlay.lsr-visible {
-  background: rgba(0, 0, 0, 0.25);
-  pointer-events: auto;
-}
-
-/* === 右侧面板 === */
-#linuxdo-side-reader-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  /* Default to a more comfortable reading width while allowing manual expansion. */
-  width: clamp(720px, 56vw, 920px);
-  min-width: 350px;
-  max-width: 100vw;
-  height: 100vh;
+  width: var(--lsr-pane-w);
   z-index: 99999;
   background: #ffffff;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
-#linuxdo-side-reader-panel.lsr-open {
-  transform: translateX(0);
+html.lsr-split-list .lsr-pane {
+  right: 0;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+}
+html.lsr-split-topic .lsr-pane {
+  left: 0;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
 }
 
 /* === 面板头部 === */
@@ -108,18 +84,10 @@
   font-size: 16px;
   line-height: 1;
 }
+.lsr-btn:hover { background: #e8e8e8; color: #333; }
+.lsr-btn-collapse:hover { background: #ff5555; color: #fff; }
 
-.lsr-btn:hover {
-  background: #e8e8e8;
-  color: #333;
-}
-
-.lsr-btn-close:hover {
-  background: #ff5555;
-  color: #fff;
-}
-
-/* === 面板主体 === */
+/* === 主体 === */
 .lsr-body {
   flex: 1;
   position: relative;
@@ -133,7 +101,7 @@
   background: #fff;
 }
 
-/* === 加载动画 === */
+/* === 加载 / 占位覆盖层 === */
 .lsr-loading {
   position: absolute;
   top: 0;
@@ -145,16 +113,15 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  z-index: 1;
+  background: rgba(255, 255, 255, 0.96);
+  z-index: 2;
   color: #888;
   font-size: 14px;
   opacity: 1;
   visibility: visible;
   transition: opacity 0.18s ease, visibility 0.18s ease;
 }
-
-.lsr-loading.lsr-loading-hidden {
+.lsr-loading.lsr-overlay-hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -166,7 +133,6 @@
   justify-content: center;
   min-height: 84px;
 }
-
 .lsr-loading-logo {
   display: block;
   max-width: 120px;
@@ -175,11 +141,6 @@
   height: auto;
   object-fit: contain;
 }
-
-.lsr-loading-has-logo .lsr-spinner {
-  display: none;
-}
-
 .lsr-spinner {
   width: 36px;
   height: 36px;
@@ -188,75 +149,77 @@
   border-radius: 50%;
   animation: lsr-spin 0.8s linear infinite;
 }
+@keyframes lsr-spin { to { transform: rotate(360deg); } }
 
-@keyframes lsr-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* === 拖拽调整宽度手柄 === */
-.lsr-resize-handle {
+/* === 分隔条 === */
+.lsr-splitter {
   position: absolute;
   top: 0;
-  left: -4px;
   width: 8px;
   height: 100%;
   cursor: col-resize;
-  z-index: 2;
+  z-index: 3;
   transition: background 0.15s;
 }
-
-.lsr-resize-handle:hover,
-.lsr-resize-handle:active {
+html.lsr-split-list .lsr-splitter { left: -4px; }
+html.lsr-split-topic .lsr-splitter { right: -4px; }
+.lsr-splitter:hover,
+.lsr-splitter:active {
   background: rgba(11, 11, 126, 0.3);
 }
 
-/* === 主页面锁定（隐藏滚动条，防止背景滚动） === */
-body.lsr-body-lock {
-  overflow: hidden !important;
+/* === 折叠态：隐藏 iframe 那一半，恢复整页 === */
+html.lsr-collapsed .lsr-pane { display: none !important; }
+html.lsr-collapsed.lsr-split-list body { margin-right: 0 !important; }
+html.lsr-collapsed.lsr-split-topic body { margin-left: 0 !important; }
+
+/* === 折叠时显示的展开按钮 === */
+.lsr-expand {
+  display: none;
+  position: fixed;
+  top: 12px;
+  z-index: 100000;
+  width: 32px;
+  height: 40px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #666;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: all 0.15s ease;
 }
+.lsr-expand:hover { background: #f0f0f0; color: #333; }
+html.lsr-collapsed .lsr-expand { display: flex; align-items: center; justify-content: center; }
+html.lsr-split-list .lsr-expand { right: 12px; }
+html.lsr-split-topic .lsr-expand { left: 12px; }
 
 /* === 拖拽时禁用 iframe 捕获鼠标 === */
-body.lsr-resizing .lsr-iframe {
-  pointer-events: none;
-}
+body.lsr-resizing .lsr-iframe { pointer-events: none; }
 
 /* === 深色模式适配 === */
-html.dark #linuxdo-side-reader-panel,
-body.dark #linuxdo-side-reader-panel {
-  background: #1a1a2e;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
-}
+html.dark .lsr-pane,
+body.dark .lsr-pane { background: #1a1a2e; box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4); }
 
 html.dark .lsr-header,
-body.dark .lsr-header {
-  background: #16213e;
-  border-bottom-color: #2a2a4a;
-}
+body.dark .lsr-header { background: #16213e; border-bottom-color: #2a2a4a; }
 
 html.dark .lsr-title,
-body.dark .lsr-title {
-  color: #e0e0e0;
-}
+body.dark .lsr-title { color: #e0e0e0; }
 
 html.dark .lsr-btn,
-body.dark .lsr-btn {
-  color: #aaa;
-}
-
+body.dark .lsr-btn { color: #aaa; }
 html.dark .lsr-btn:hover,
-body.dark .lsr-btn:hover {
-  background: #2a2a4a;
-  color: #e0e0e0;
-}
+body.dark .lsr-btn:hover { background: #2a2a4a; color: #e0e0e0; }
 
 html.dark .lsr-loading,
-body.dark .lsr-loading {
-  background: rgba(26, 26, 46, 0.94);
-  color: #aaa;
-}
+body.dark .lsr-loading { background: rgba(26, 26, 46, 0.96); color: #aaa; }
 
 html.dark .lsr-spinner,
-body.dark .lsr-spinner {
-  border-color: #2a2a4a;
-  border-top-color: #0b0b7e;
-}
+body.dark .lsr-spinner { border-color: #2a2a4a; border-top-color: #0b0b7e; }
+
+html.dark .lsr-expand,
+body.dark .lsr-expand { background: #16213e; color: #aaa; border-color: #2a2a4a; }
+html.dark .lsr-expand:hover,
+body.dark .lsr-expand:hover { background: #2a2a4a; color: #e0e0e0; }
