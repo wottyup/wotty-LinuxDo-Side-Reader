@@ -76,6 +76,38 @@
       flex: 0 1 auto !important;
     }
     #main-outlet-wrapper { flex: 1 1 auto !important; max-height: none !important; }
+    /* 每楼正文在 iframe 内不要保留 Discourse 桌面版的大块操作区留白 */
+    .topic-post article,
+    .regular.contents,
+    .topic-body,
+    .post_body,
+    .topic-body.clearfix,
+    .post_body.topic-body.clearfix {
+      min-height: 0 !important;
+      height: auto !important;
+      padding-bottom: 0 !important;
+      margin-bottom: 0 !important;
+    }
+    .topic-body .cooked,
+    .post_body .cooked {
+      min-height: 0 !important;
+      margin-bottom: 0 !important;
+      padding-bottom: 0 !important;
+    }
+    .topic-body .post-menu-area,
+    .post_body .post-menu-area,
+    .post-menu-area {
+      min-height: 0 !important;
+      height: auto !important;
+      margin-top: 4px !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 6px !important;
+    }
+    .topic-post {
+      margin-bottom: 0 !important;
+      padding-bottom: 0 !important;
+    }
     /* 帖子列表页：列表容器不要撑满整屏 */
     .list-container,
     .latest-topic-list,

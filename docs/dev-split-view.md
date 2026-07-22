@@ -67,3 +67,8 @@
 - 用户截图显示空白出现在最后一条真实回复之后，说明问题不是普通 `min-height`，而是 iframe 内右侧时间轴/推荐主题/页脚尾部仍参与布局高度计算。
 - `IFRAME_LAYOUT_STYLE` 对 `.topic-area` 加 `align-items:flex-start`，并把 `.timeline-container`、`.topic-navigation`、`.topic-timeline`、`.topic-map` 的 `min-height` 和 `height` 压为 `auto/0`，避免时间轴栏把短帖撑成整屏高度。
 - 同时折叠 `#suggested-topics`、`.suggested-topics`、`.more-topics`、`.topic-footer-main-buttons`、`.topic-above-footer-buttons-outlet`、`footer` 等尾部区域，避免它们在阅读 iframe 内留下看不见但可滚动的占位。
+
+## v0.0.46 每楼正文空白修复
+- 用户通过 DevTools 截图确认空白来自单楼元素 `div.post_body.topic-body.clearfix`，不是页面尾部。
+- `IFRAME_LAYOUT_STYLE` 增加楼层级收紧规则：对 `.topic-post article`、`.regular.contents`、`.topic-body`、`.post_body`、`.post_body.topic-body.clearfix` 统一取消 `min-height`、`padding-bottom`、`margin-bottom`。
+- 同时收紧 `.cooked` 和 `.post-menu-area` 的下方间距，避免短回复楼层仍保留桌面版操作区高度，造成 iframe 右侧滚动条比左侧更长。
