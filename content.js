@@ -40,6 +40,7 @@
   let bodyEl = null;
   let iframeEl = null;
   let loadingEl = null;
+  let spinnerEl = null;
   let loadingTextEl = null;
   let newtabBtnEl = null;
   let titleEl = null;
@@ -116,6 +117,7 @@
 
     bodyEl = paneEl.querySelector('.lsr-body');
     loadingEl = paneEl.querySelector('.lsr-loading');
+    spinnerEl = paneEl.querySelector('.lsr-spinner');
     loadingTextEl = paneEl.querySelector('.lsr-loading-text');
     newtabBtnEl = paneEl.querySelector('.lsr-btn-newtab');
     titleEl = paneEl.querySelector('.lsr-title');
@@ -328,6 +330,7 @@
   function showLoading(text) {
     if (!loadingEl) return;
     if (text && loadingTextEl) loadingTextEl.textContent = text;
+    if (spinnerEl) spinnerEl.style.display = '';
     if (iframeEl) iframeEl.style.visibility = 'hidden';
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
@@ -336,6 +339,7 @@
   function showPlaceholder() {
     if (!loadingEl) return;
     if (loadingTextEl) loadingTextEl.textContent = '点击左侧帖子开始阅读';
+    if (spinnerEl) spinnerEl.style.display = 'none'; // 占位态不转圈
     if (iframeEl) iframeEl.style.visibility = 'hidden';
     loadingEl.style.display = 'flex';
     requestAnimationFrame(() => loadingEl.classList.remove('lsr-overlay-hidden'));
