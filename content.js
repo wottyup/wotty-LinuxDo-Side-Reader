@@ -77,11 +77,12 @@
       startEarlyCssInject();
       watchReady(() => hideOverlay());
     } else {
-      // 右栏先占位，等点击帖子再加载
+      // 列表模式：刷新后自动打开第一个帖子，不留空白
       titleEl.textContent = 'LinuxDo Side Reader';
       newtabBtnEl.href = HOST_URL;
       showPlaceholder();
-      ensureIframe(HOST_URL); // 预热 /latest（被占位层盖住）
+      ensureIframe(HOST_URL); // 预热 /latest
+      autoOpenFirstTopic();
     }
 
     if (collapsed) applyCollapsed();
@@ -192,11 +193,26 @@
 
   // ---- 打开帖子到右栏（列表模式）----
 
+  // 列表模式刷新后自动打开第一个帖子，避免右栏空白
+  function autoOpenFirstTopic() {
+    let tries = 0;
+    const tick = () => {
+      if (activeTopicUrl) return; // 用户已点或已自动打开，停止
+      const links = document.querySelectorAll('a[href*="/t/"]');
+      for (const a of links) {
+        if (TOPIC_LINK_PATTERN.test(a.href)) { openTopic(a.href); return; }
+      }
+      if (++tries < 80) window.setTimeout(tick, 100); // 最多等 8s
+    };
+    tick();
+  }
+
   function openTopic(url) {
     const normalized = normalizeUrl(url);
     activeTopicUrl = normalized;
     newtabBtnEl.href = normalized;
     updateTitle(normalized);
+    ensureIframe(); // 确保预热 iframe 就位
 
     if (isIframeReady(iframeEl) && sameTopic(loadedTopicUrl, normalized)) {
       mountIframe();
