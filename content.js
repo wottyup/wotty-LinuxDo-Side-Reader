@@ -23,14 +23,18 @@
   const MIN_RATIO = 0.2;
   const MAX_RATIO = 0.8;
 
-  // 注入到 iframe 内的布局样式：隐藏左侧主侧边栏，让内容占满 pane。
+  // 注入到 iframe 内的布局样式：
+  // - 隐藏左侧主侧边栏（加宽选择器，避免侧边栏先渲染再被隐藏的闪烁）
+  // - 隐藏 Discourse 自带的加载图标/骨架，避免与我们的加载层重复转圈
   const IFRAME_LAYOUT_STYLE = `
     html, body { overscroll-behavior: contain !important; }
     :root {
       --d-sidebar-width: 0px !important;
       --d-sidebar-width-desktop: 0px !important;
     }
-    .sidebar-wrapper, .sidebar-container, .d-sidebar { display: none !important; }
+    .d-sidebar, .sidebar-wrapper, .sidebar-container, .admin-sidebar, .sidebar-pane { display: none !important; }
+    .loading-container, .loading-frame, .preloader, .boot-loader, .spinner-container,
+    .skeleton-loader, .topic-list-skeleton, .loading-overlay { display: none !important; }
     .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
@@ -52,6 +56,7 @@
   let loadedTopicUrl = '';
   let activeTopicUrl = '';
   let watchTimer = 0;
+  let cssInjectTimer = 0;
   let iframeClickBound = false;
 
   // ---- init ----
@@ -68,12 +73,12 @@
     bindEvents();
 
     if (isTopicPage) {
-      // 左栏 iframe 直接显示 /latest
+      // 左栏 iframe 直接显示 /latest：尽早注入 CSS 并揭示，避免长时间转圈
       titleEl.textContent = '帖子列表';
       newtabBtnEl.href = HOST_URL;
       showLoading('正在加载列表...');
       ensureIframe(HOST_URL);
-      watchReady(() => hideOverlay());
+      earlyInjectAndReveal();
     } else {
       // 右栏先占位，等点击帖子再加载
       titleEl.textContent = 'LinuxDo Side Reader';
@@ -261,11 +266,12 @@
     injectLayoutIntoDoc(iframeEl.contentDocument);
 
     if (isTopicPage) {
-      // 左栏 /latest 就绪
+      // 左栏 /latest：CSS 已在早期注入，这里补一次并揭示 + 绑定拦截
       bindIframeClickCapture();
-      watchReady(() => hideOverlay());
+      revealIframe();
     } else if (activeTopicUrl) {
       // 列表模式：整页 reload 方式加载帖子后的 load 事件
+      injectLayoutIntoDoc(iframeEl.contentDocument);
       watchTopic(activeTopicUrl, () => {
         loadedTopicUrl = activeTopicUrl;
         hideOverlay();
@@ -287,6 +293,8 @@
     } catch (_) {
       iframeEl.src = normalized;
     }
+    // 整页 reload 回退：尽早注入 CSS，避免侧边栏先渲染再被隐藏的闪烁
+    startEarlyCssInject(false);
     loadedTopicUrl = '';
   }
 
@@ -396,6 +404,40 @@
     watchTimer = window.setInterval(() => {
       if (isIframeReady(iframeEl)) { stopWatch(); onReady(); }
     }, WATCH_INTERVAL_MS);
+  }
+
+  // 帖子模式：尽早把布局 CSS 注入 iframe（在 Discourse 渲染侧边栏之前），
+  // 并在 iframe 文档可用后立即揭示，让 /latest 直接渐进显示，不再长时间挡在转圈后。
+  function earlyInjectAndReveal() {
+    startEarlyCssInject(true);
+  }
+
+  // 独立定时器轮询注入 CSS（不干扰 watchTimer）。reveal=true 时文档可用即揭示 iframe。
+  function startEarlyCssInject(reveal) {
+    stopCssInject();
+    let tries = 0;
+    const MAX = 80; // ~4s
+    cssInjectTimer = window.setInterval(() => {
+      if (!iframeEl) { stopCssInject(); return; }
+      const doc = iframeEl.contentDocument;
+      if (doc) {
+        if (doc.head || doc.documentElement) injectLayoutIntoDoc(doc);
+        if (reveal && doc.body) revealIframe();
+      }
+      if (++tries >= MAX) stopCssInject();
+    }, 50);
+  }
+
+  function stopCssInject() {
+    if (!cssInjectTimer) return;
+    window.clearInterval(cssInjectTimer);
+    cssInjectTimer = 0;
+  }
+
+  function revealIframe() {
+    if (!iframeEl) return;
+    if (iframeEl.style.visibility !== '') iframeEl.style.visibility = '';
+    hideOverlay();
   }
 
   function watchTopic(url, onReady) {

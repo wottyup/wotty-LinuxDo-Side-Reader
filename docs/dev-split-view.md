@@ -49,3 +49,9 @@
 4. 拖拽分隔条改比例、刷新保留。
 5. 折叠按钮/Esc 收起恢复整页、再展开恢复。
 6. 深色模式正常。
+
+## v0.0.32 加载体验修复
+- **慢**：帖子页左栏 /latest 改为 `earlyInjectAndReveal`——文档可用即揭示 iframe，不再等到 `readyState=complete`。
+- **多个加载图标**：`IFRAME_LAYOUT_STYLE` 增加 `.loading-container/.spinner-container/.skeleton-loader/.topic-list-skeleton` 等 `display:none`，隐藏 iframe 内 Discourse 自带加载层。
+- **侧边栏闪烁**：独立 `cssInjectTimer` 在导航后立即轮询 `contentDocument` 注入 CSS（`startEarlyCssInject`），在 Discourse 渲染侧边栏前生效；侧边栏选择器加宽到 `.d-sidebar/.sidebar-wrapper/.sidebar-container/.admin-sidebar/.sidebar-pane`。
+- 去掉 body margin 过渡，避免主页面收窄时滑动。
