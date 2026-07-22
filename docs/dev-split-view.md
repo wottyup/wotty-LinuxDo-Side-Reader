@@ -55,3 +55,6 @@
 - **多个加载图标**：`IFRAME_LAYOUT_STYLE` 增加 `.loading-container/.spinner-container/.skeleton-loader/.topic-list-skeleton` 等 `display:none`，隐藏 iframe 内 Discourse 自带加载层。
 - **侧边栏闪烁**：独立 `cssInjectTimer` 在导航后立即轮询 `contentDocument` 注入 CSS（`startEarlyCssInject`），在 Discourse 渲染侧边栏前生效；侧边栏选择器加宽到 `.d-sidebar/.sidebar-wrapper/.sidebar-container/.admin-sidebar/.sidebar-pane`。
 - 去掉 body margin 过渡，避免主页面收窄时滑动。
+## v0.0.43 响应式与底部空白修复
+- **底部空白**：iframe 内 Discourse 的 `#main-outlet` / `#main-outlet-wrapper` 带 `min-height` 占位，全屏/高窗口下短帖子下方留出很高空白。在 `IFRAME_LAYOUT_STYLE` 中对 `#main-outlet` / `#main-outlet-wrapper` / `.container.posts` / `.topic-area` 强制 `min-height:0; height:auto`，`#main-outlet-wrapper` 改 `flex:1 1 auto`，`html,body` 取消 `min-height`。
+- **宽度不响应**：拖拽分隔条或窗口缩放时 iframe 尺寸虽变，但 Discourse 内部布局不会自动重排。新增 `notifyIframeResize()`，在 `syncRatioToViewport` 和拖拽 `onMove` 中向 `iframeEl.contentWindow` 派发 `resize` 事件，触发 Discourse 内部重排。

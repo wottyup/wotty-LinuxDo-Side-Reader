@@ -34,6 +34,10 @@
     .timeline-container { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-navigation { display: flex !important; visibility: visible !important; opacity: 1 !important; }
     .topic-timeline, .topic-map { display: block !important; visibility: visible !important; opacity: 1 !important; }
+    /* 消除 iframe 内多余的底部空白占位（Discourse 主内容区 min-height 撑出的高空白） */
+    #main-outlet, #main-outlet-wrapper, .container.posts, .topic-area { min-height: 0 !important; height: auto !important; }
+    #main-outlet-wrapper { flex: 1 1 auto !important; }
+    html, body { min-height: 0 !important; height: auto !important; }
   `;
 
   let paneEl = null;
@@ -509,6 +513,7 @@
     function onMove(e) {
       let w = isTopicPage ? startW + (e.clientX - startX) : startW + (startX - e.clientX);
       setPaneWidthPx(clampPaneWidth(w));
+      notifyIframeResize();
     }
     function onUp() {
       document.body.classList.remove('lsr-resizing');
@@ -536,10 +541,17 @@
     setPaneWidthPx(Math.round((r == null ? 0.5 : r) * window.innerWidth));
   }
 
+  // 宽度变化后向 iframe 窗口派发 resize，触发 Discourse 内部布局重排，避免右侧内容不自适应
+  function notifyIframeResize() {
+    if (!iframeEl || !iframeEl.contentWindow) return;
+    try { iframeEl.contentWindow.dispatchEvent(new iframeEl.contentWindow.Event("resize")); } catch (_) {}
+  }
+
   function syncRatioToViewport() {
     // 窗口变化时按「存储的比例」重算像素，两侧等比缩放，不会一边固定挤另一边
     const r = readRatio();
     setPaneWidthPx(clampPaneWidth(Math.round((r == null ? 0.5 : r) * window.innerWidth)));
+    notifyIframeResize();
   }
 
   function readRatio() {
