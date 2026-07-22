@@ -19,7 +19,7 @@
   const COLLAPSED_STORAGE_KEY = 'linuxdo-side-reader-collapsed';
   const HOST_URL = 'https://linux.do/latest';
   const IFRAME_SANDBOX = 'allow-same-origin allow-scripts allow-popups allow-forms';
-  const WATCH_INTERVAL_MS = 80;
+  const WATCH_INTERVAL_MS = 50;
   const MIN_RATIO = 0.2;
   const MAX_RATIO = 0.8;
 
@@ -81,7 +81,6 @@
       titleEl.textContent = 'LinuxDo Side Reader';
       newtabBtnEl.href = HOST_URL;
       showPlaceholder();
-      ensureIframe(HOST_URL); // 预热 /latest
       autoOpenFirstTopic();
     }
 
@@ -177,19 +176,9 @@
     if (paneEl && paneEl.contains(link)) return;
 
     const url = normalizeUrl(link.href);
-    warmupToTopic(url);
-
     e.preventDefault();
     e.stopPropagation();
     openTopic(url);
-  }
-
-  function warmupToTopic(url) {
-    const normalized = normalizeUrl(url);
-    if (!TOPIC_LINK_PATTERN.test(normalized)) return;
-    if (loadedTopicUrl && sameTopic(loadedTopicUrl, normalized)) return;
-    ensureIframe();
-    navigateIframeTo(normalized);
   }
 
   // ---- 打开帖子到右栏（列表模式）----
@@ -213,7 +202,6 @@
     activeTopicUrl = normalized;
     newtabBtnEl.href = normalized;
     updateTitle(normalized);
-    ensureIframe(); // 确保预热 iframe 就位
 
     if (isIframeReady(iframeEl) && sameTopic(loadedTopicUrl, normalized)) {
       mountIframe();
@@ -221,11 +209,16 @@
       return;
     }
 
-    // 加载期间：单一转圈覆盖层 + 隐藏 iframe，就绪后揭开
     showLoading('正在加载帖子...');
-    mountIframe();
-    if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
-      navigateIframeTo(normalized);
+    if (!iframeEl) {
+      // 首次打开：直接用帖子 URL 创建 iframe，省去「先加载 /latest 再路由」两步
+      ensureIframe(normalized);
+      startEarlyCssInject();
+    } else {
+      mountIframe();
+      if (!sameTopic(safeIframeHref(iframeEl), normalized)) {
+        navigateIframeTo(normalized);
+      }
     }
     watchTopic(normalized, () => {
       loadedTopicUrl = normalized;
