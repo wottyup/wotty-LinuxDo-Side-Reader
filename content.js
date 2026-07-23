@@ -39,7 +39,7 @@
       align-self: flex-start !important;
       min-height: 0 !important;
       height: auto !important;
-      max-height: calc(100vh - 56px) !important;
+      max-height: calc(100% - 56px) !important;
     }
     .topic-navigation {
       display: flex !important;
@@ -64,6 +64,11 @@
     }
     #main-outlet-wrapper,
     #main-outlet,
+    #main-outlet-wrapper > div,
+    .post-stream,
+    .post-stream-wrapper,
+    .container.posts > .post-stream,
+    .topic-area > .post-stream,
     .container.posts,
     .topic-area,
     .posts-wrapper,
@@ -75,7 +80,9 @@
       height: auto !important;
       flex: 0 1 auto !important;
     }
-    #main-outlet-wrapper { flex: 1 1 auto !important; max-height: none !important; }
+    #main-outlet-wrapper { flex: 1 1 auto !important; max-height: none !important; min-height: 0 !important; height: auto !important; }
+    #main-outlet { min-height: 0 !important; height: auto !important; flex: 0 1 auto !important; }
+    .post-stream, .post-stream-wrapper { min-height: 0 !important; height: auto !important; flex: 0 1 auto !important; }
     /* 每楼正文在 iframe 内不要保留 Discourse 桌面版的大块操作区留白 */
     .topic-post article,
     .regular.contents,

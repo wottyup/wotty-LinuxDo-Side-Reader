@@ -85,6 +85,10 @@ liunxdo/
 
 ## 📝 版本记录
 
+### v0.0.47 (2026-07-23)
+- 修复 4K 高视口下右栏底部仍残留空白：补压 #main-outlet-wrapper > div / .post-stream / .post-stream-wrapper / #main-outlet 等漏网层
+- 时间轴 max-height 由 100vh 改为 100%，避免高视口下与 Discourse min-height 对不齐
+
 ### v0.0.46 (2026-07-22)
 - 🐛 修复右侧 iframe 中每一楼 `.post_body.topic-body.clearfix` 自身保留大块下方空白，导致右侧滚动条比左侧更长的问题
 
